@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101522">
+  <title>Sign in — Orbit VSEPR</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #eef2ff;
+      background: #101522;
+      --muted: #9da8be;
+      --line: rgba(179, 193, 221, .13);
+      --panel: rgba(23, 31, 48, .88);
+    }
+    * { box-sizing: border-box; }
+    body {
+      min-width: 320px; min-height: 100vh; margin: 0;
+      background: radial-gradient(ellipse at 75% 15%, rgba(84, 100, 177, .18), transparent 34rem), #101522;
+    }
+    header { height: 72px; display: flex; align-items: center; padding: 0 max(20px, calc((100% - 1040px) / 2)); border-bottom: 1px solid var(--line); }
+    header a { color: #dce3f5; font-size: 14px; font-weight: 700; text-decoration: none; }
+    main { width: min(440px, calc(100% - 32px)); margin: 9vh auto; }
+    .card { padding: 28px; border: 1px solid var(--line); border-radius: 18px; background: var(--panel); box-shadow: 0 18px 55px rgba(0, 0, 0, .2); }
+    .eyebrow { color: #a4afff; font-size: 11px; font-weight: 750; letter-spacing: .16em; text-transform: uppercase; }
+    h1 { margin: 9px 0; font-size: 30px; letter-spacing: -.03em; }
+    .intro { margin: 0 0 22px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+    .mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 5px; margin-bottom: 20px; border: 1px solid var(--line); border-radius: 10px; background: rgba(10, 15, 25, .48); }
+    .mode-switch button, .submit {
+      min-height: 42px; border: 0; border-radius: 7px; color: #e6eaff;
+      background: transparent; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+    .mode-switch button[aria-pressed="true"] { color: #11172a; background: #b2bbff; }
+    label { display: block; margin: 15px 0 7px; color: #c4cce0; font-size: 12px; font-weight: 650; }
+    input, select {
+      width: 100%; height: 44px; padding: 0 12px; border: 1px solid rgba(174, 190, 219, .18);
+      border-radius: 9px; outline: none; color: #f3f5ff; background: rgba(10, 15, 25, .6); font: inherit; font-size: 13px;
+    }
+    input:focus, select:focus { border-color: #8998ff; box-shadow: 0 0 0 3px rgba(137, 152, 255, .13); }
+    .submit { width: 100%; margin-top: 21px; color: #11172a; background: #b2bbff; }
+    .submit:hover { background: #c5cbff; }
+    .message { min-height: 20px; margin: 14px 0 0; color: var(--muted); font-size: 12px; }
+    .message.error { color: #ffaaaa; }
+    .hint { margin-top: 10px; color: #8793aa; font-size: 11px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <header><a href="/">ORBIT / VSEPR</a></header>
+  <main>
+    <section class="card">
+      <div class="eyebrow">Student account</div>
+      <h1 id="page-title">Sign in</h1>
+      <p class="intro">Sign in to save your molecule searches and see recommendations for your grade.</p>
+      <div class="mode-switch" aria-label="Account action">
+        <button id="login-mode" type="button" aria-pressed="true">Sign in</button>
+        <button id="register-mode" type="button" aria-pressed="false">Create account</button>
+      </div>
+      <form id="account-form">
+        <label for="username">Username</label>
+        <input id="username" name="username" minlength="3" maxlength="30" autocomplete="username" required>
+
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" minlength="6" autocomplete="current-password" required>
+
+        <label for="class-name">Class</label>
+        <select id="class-name" name="class_name" required>
+          <option value="6">Grade 6</option>
+          <option value="7">Grade 7</option>
+          <option value="8">Grade 8</option>
+          <option value="9">Grade 9</option>
+          <option value="10">Grade 10</option>
+          <option value="11">Grade 11</option>
+          <option value="12">Grade 12</option>
+        </select>
+
+        <button class="submit" id="submit-button" type="submit">Sign in</button>
+        <p class="message" id="message" role="status"></p>
+      </form>
+      <p class="hint">Passwords are stored as secure hashes, not as readable text. This local app keeps you signed in until it is restarted.</p>
+    </section>
+  </main>
+  <script>
+    const form = document.querySelector("#account-form");
+    const loginMode = document.querySelector("#login-mode");
+    const registerMode = document.querySelector("#register-mode");
+    const pageTitle = document.querySelector("#page-title");
+    const password = document.querySelector("#password");
+    const submitButton = document.querySelector("#submit-button");
+    const message = document.querySelector("#message");
+    let isRegistering = false;
+
+    function chooseMode(registering) {
+      isRegistering = registering;
+      loginMode.setAttribute("aria-pressed", String(!registering));
+      registerMode.setAttribute("aria-pressed", String(registering));
+      pageTitle.textContent = registering ? "Create account" : "Sign in";
+      submitButton.textContent = registering ? "Create account" : "Sign in";
+      password.autocomplete = registering ? "new-password" : "current-password";
+      message.textContent = "";
+      message.classList.remove("error");
+    }
+
+    loginMode.addEventListener("click", () => chooseMode(false));
+    registerMode.addEventListener("click", () => chooseMode(true));
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      submitButton.disabled = true;
+      message.textContent = isRegistering ? "Creating your account…" : "Signing in…";
+      message.classList.remove("error");
+      try {
+        const response = await fetch(
+          isRegistering ? "/api/account/register" : "/api/account/login",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              username: form.elements.username.value,
+              password: form.elements.password.value,
+              class_name: form.elements.class_name.value,
+            }),
+          },
+        );
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Could not sign in.");
+        window.location.assign("/");
+      } catch (error) {
+        message.textContent = error instanceof Error ? error.message : "Could not sign in.";
+        message.classList.add("error");
+      } finally {
+        submitButton.disabled = false;
+      }
+    });
+
+    fetch("/api/session").then((response) => {
+      if (response.ok) window.location.assign("/");
+    });
+  </script>
+</body>
+</html>

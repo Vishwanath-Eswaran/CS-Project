@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#101522" />
+  <title>Profile · Orbit VSEPR</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #edf2ff;
+      background: #101522;
+      --bg: #101522;
+      --panel: rgba(23, 31, 48, 0.9);
+      --line: rgba(179, 193, 221, 0.14);
+      --muted: #9da8be;
+      --accent: #b2bbff;
+      --danger: #ffb3b3;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: #edf2ff;
+    }
+    body {
+      min-height: 100vh;
+      background:
+        radial-gradient(ellipse at 18% 23%, rgba(77, 95, 178, 0.2), transparent 30rem),
+        radial-gradient(ellipse at 80% 78%, rgba(153, 99, 189, 0.15), transparent 26rem),
+        var(--bg);
+    }
+    .page { width: min(1100px, calc(100% - 32px)); margin: 0 auto; }
+    header {
+      height: 82px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--line);
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 11px;
+      color: #edf2ff;
+      font-size: 14px;
+      font-weight: 750;
+      letter-spacing: 0.04em;
+      text-decoration: none;
+    }
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 11px;
+      color: #e2e9ff;
+      background: linear-gradient(145deg, #6676db, #8b67c6);
+      box-shadow: 0 6px 22px rgba(111, 113, 215, 0.24);
+    }
+    .brand-mark svg { width: 21px; height: 21px; }
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .nav a {
+      color: inherit;
+      text-decoration: none;
+    }
+    .nav a:hover { color: #fff; }
+    main {
+      padding: 42px 0 64px;
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 22px;
+      align-items: stretch;
+      margin-bottom: 24px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
+      overflow: hidden;
+    }
+    .profile-card {
+      padding: 24px 24px 18px;
+    }
+    .eyebrow {
+      margin: 0 0 10px;
+      color: #a4afff;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .profile-card h1 {
+      margin: 0;
+      font-size: clamp(30px, 4vw, 44px);
+      letter-spacing: -0.06em;
+      line-height: 1.02;
+    }
+    .profile-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 7px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(15, 20, 30, 0.6);
+      white-space: nowrap;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      padding: 18px 16px 10px;
+    }
+    .stat {
+      background: rgba(15, 20, 30, 0.55);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 18px 16px;
+    }
+    .stat .label {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .stat .value {
+      margin-top: 8px;
+      font-size: clamp(20px, 2vw, 30px);
+      font-weight: 800;
+      letter-spacing: -0.05em;
+    }
+    .section {
+      padding: 20px 20px 18px;
+      margin-top: 20px;
+    }
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+    .section-header h2 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: -0.04em;
+    }
+    .action-btn {
+      border: 0;
+      border-radius: 9px;
+      background: var(--accent);
+      color: #11172a;
+      font: inherit;
+      font-weight: 700;
+      padding: 9px 12px;
+      cursor: pointer;
+    }
+    .list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 10px;
+    }
+    .list li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(13, 17, 29, 0.5);
+      padding: 12px 14px;
+      color: #dfe8ff;
+    }
+    .list .meta {
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .list .tag {
+      font-size: 11px;
+      color: #dfe8ff;
+      border-radius: 999px;
+      padding: 5px 8px;
+      background: rgba(124, 136, 224, 0.18);
+      border: 1px solid rgba(141, 154, 255, 0.2);
+    }
+    .two-col {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 20px;
+      margin-top: 20px;
+    }
+    .empty {
+      color: var(--muted);
+      border: 1px dashed var(--line);
+      border-radius: 12px;
+      padding: 16px;
+      background: rgba(15, 20, 30, 0.3);
+    }
+    .status {
+      min-height: 20px;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .status.error { color: var(--danger); }
+    @media (max-width: 800px) {
+      .hero, .two-col {
+        grid-template-columns: 1fr;
+      }
+      .stats {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <a class="brand" href="/" aria-label="Orbit VSEPR home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="2.4" fill="currentColor" />
+            <ellipse cx="12" cy="12" rx="9" ry="4.3" stroke="currentColor" stroke-width="1.4" transform="rotate(32 12 12)" />
+            <ellipse cx="12" cy="12" rx="9" ry="4.3" stroke="currentColor" stroke-width="1.4" transform="rotate(-32 12 12)" />
+          </svg>
+        </span>
+        ORBIT <span style="color:#76839b;font-weight:500">/ VSEPR</span>
+      </a>
+      <div class="nav">
+        <a href="/vpython">Open VPython</a>
+        <a href="/signin.html" id="signin-link">Sign in</a>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="card profile-card">
+          <div class="eyebrow">Student profile</div>
+          <h1 id="profile-name">Loading…</h1>
+          <div class="profile-meta">
+            <span class="pill" id="profile-class">Grade --</span>
+            <span class="pill" id="profile-last-search">No searches yet</span>
+          </div>
+        </div>
+
+        <div class="card stats" aria-label="Profile summary">
+          <div class="stat">
+            <div class="label">Searches</div>
+            <div class="value" id="search-total">0</div>
+          </div>
+          <div class="stat">
+            <div class="label">Popular</div>
+            <div class="value" id="top-molecule">—</div>
+          </div>
+          <div class="stat">
+            <div class="label">Grade</div>
+            <div class="value" id="grade-total">—</div>
+          </div>
+        </div>
+      </section>
+
+      <div class="two-col">
+        <section class="card section">
+          <div class="section-header">
+            <h2>Recent searches</h2>
+            <button type="button" class="action-btn" id="go-vpython">Open viewer</button>
+          </div>
+          <ul class="list" id="recent-searches"></ul>
+        </section>
+
+        <section class="card section">
+          <div class="section-header">
+            <h2>Recommendations</h2>
+            <button type="button" class="action-btn" id="sign-out">Sign out</button>
+          </div>
+          <div class="status" id="status">Loading recommendations…</div>
+          <div class="two-col" style="margin-top: 14px; gap: 12px;">
+            <div>
+              <h3>Class favorites</h3>
+              <ul class="list" id="class-recommendations"></ul>
+            </div>
+            <div>
+              <h3>Your recent picks</h3>
+              <ul class="list" id="personal-recommendations"></ul>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const profileName = document.getElementById('profile-name');
+    const profileClass = document.getElementById('profile-class');
+    const profileLastSearch = document.getElementById('profile-last-search');
+    const searchTotal = document.getElementById('search-total');
+    const topMolecule = document.getElementById('top-molecule');
+    const gradeTotal = document.getElementById('grade-total');
+    const recentList = document.getElementById('recent-searches');
+    const classList = document.getElementById('class-recommendations');
+    const personalList = document.getElementById('personal-recommendations');
+    const status = document.getElementById('status');
+    const signInLink = document.getElementById('signin-link');
+
+    function setEmpty(listElement, text) {
+      listElement.innerHTML = '<li class="empty">' + text + '</li>';
+    }
+
+    function renderItems(target, items, emptyText) {
+      target.innerHTML = '';
+      if (!items.length) {
+        setEmpty(target, emptyText);
+        return;
+      }
+      const fragment = document.createDocumentFragment();
+      items.forEach((item) => {
+        const row = document.createElement('li');
+        const label = document.createElement('div');
+        label.textContent = item.name;
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        meta.textContent = item.searches ? 'searched ' + item.searches + 'x' : 'recent';
+        const badge = document.createElement('span');
+        badge.className = 'tag';
+        badge.textContent = item.searches ? item.searches + 'x' : 'new';
+        row.appendChild(label);
+        row.appendChild(meta);
+        row.appendChild(badge);
+        fragment.appendChild(row);
+      });
+      target.appendChild(fragment);
+    }
+
+    async function loadProfile() {
+      try {
+        const response = await fetch('/api/profile');
+        if (!response.ok) {
+          throw new Error((await response.json()).error || 'Sign in to open your profile.');
+        }
+        const data = await response.json();
+        profileName.textContent = data.username;
+        profileClass.textContent = 'Grade ' + data.class_name;
+        gradeTotal.textContent = 'G' + data.class_name;
+        const totalSearches = data.recent_searches.reduce((sum, item) => sum + item.searches, 0);
+        searchTotal.textContent = totalSearches;
+        const top = data.recent_searches[0];
+        topMolecule.textContent = top ? top.name : '—';
+        profileLastSearch.textContent = top ? 'Last: ' + top.name : 'No searches yet';
+
+        const recent = data.recent_searches.map((item) => ({
+          name: item.name,
+          searches: item.searches,
+        }));
+        renderItems(recentList, recent, 'No saved searches yet.');
+        renderItems(classList, data.class_recommendations || [], 'No class recommendations yet.');
+        renderItems(personalList, data.personal_recommendations || [], 'No personal recommendations yet.');
+
+        if (data.recent_searches.length) {
+          status.textContent = 'Your recommendations are ready.';
+        } else {
+          status.textContent = 'Use the VPython page to make your first search.';
+        }
+      } catch (error) {
+        profileName.textContent = 'Not signed in';
+        profileClass.textContent = 'Grade --';
+        profileLastSearch.textContent = 'Open your account';
+        setEmpty(recentList, 'Please sign in to see your recent searches.');
+        setEmpty(classList, 'Please sign in to see class recommendations.');
+        setEmpty(personalList, 'Please sign in to see personal recommendations.');
+        status.textContent = error.message;
+        status.classList.add('error');
+      }
+    }
+
+    document.getElementById('go-vpython').addEventListener('click', () => {
+      window.location.href = '/vpython';
+    });
+
+    document.getElementById('sign-out').addEventListener('click', async () => {
+      await fetch('/api/logout', { method: 'POST' });
+      window.location.href = '/signin.html';
+    });
+
+    signInLink.href = '/profile';
+    signInLink.textContent = 'Profile';
+    loadProfile();
+  </script>
+</body>
+</html>

@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#101522" />
+  <title>Sign in · Orbit VSEPR</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #edf2ff;
+      background: #101522;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+      --muted: #9da8be;
+      --line: rgba(179, 193, 221, .14);
+      --panel: rgba(23, 31, 48, .88);
+      --accent: #b2bbff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      min-width: 320px;
+      min-height: 100vh;
+      margin: 0;
+      background:
+        radial-gradient(ellipse at 18% 24%, rgba(84, 100, 177, .19), transparent 34rem),
+        radial-gradient(ellipse at 88% 82%, rgba(122, 91, 178, .12), transparent 32rem),
+        #101522;
+    }
+    .page { width: min(1080px, calc(100% - 40px)); margin: 0 auto; }
+    header {
+      height: 82px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--line);
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 11px;
+      color: #edf2ff;
+      font-size: 14px;
+      font-weight: 750;
+      letter-spacing: .04em;
+      text-decoration: none;
+    }
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 11px;
+      color: #e3e7ff;
+      background: linear-gradient(145deg, #6676db, #8b67c6);
+      box-shadow: 0 6px 22px rgba(111, 113, 215, .28);
+    }
+    .brand-mark svg { width: 21px; height: 21px; }
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: #b6c0d5;
+      font-size: 12px;
+      text-decoration: none;
+      transition: color .18s ease;
+    }
+    .back-link:hover { color: #fff; }
+    .back-link svg { width: 15px; height: 15px; }
+    main {
+      min-height: calc(100vh - 83px);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
+      align-items: center;
+      gap: clamp(48px, 9vw, 112px);
+      padding: 54px 0 72px;
+    }
+    .intro { max-width: 480px; }
+    .eyebrow {
+      color: #a4afff;
+      font-size: 11px;
+      font-weight: 750;
+      letter-spacing: .17em;
+      text-transform: uppercase;
+    }
+    .intro h1 {
+      margin: 14px 0 14px;
+      font-size: clamp(38px, 5vw, 58px);
+      line-height: 1.04;
+      letter-spacing: -.055em;
+    }
+    .intro-copy {
+      max-width: 390px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.75;
+    }
+    .molecule-art {
+      width: min(100%, 350px);
+      display: block;
+      margin: 24px auto 0;
+      overflow: visible;
+      filter: drop-shadow(0 10px 38px rgba(96, 110, 211, .13));
+    }
+    .card {
+      padding: clamp(24px, 4vw, 34px);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: var(--panel);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, .28);
+      backdrop-filter: blur(18px);
+    }
+    .card-heading { margin-bottom: 23px; }
+    .card-heading h2 {
+      margin: 7px 0 6px;
+      font-size: 27px;
+      letter-spacing: -.035em;
+    }
+    .card-heading p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .mode {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5px;
+      padding: 5px;
+      margin-bottom: 20px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: rgba(10, 15, 25, .48);
+    }
+    .mode button {
+      min-height: 39px;
+      border: 0;
+      border-radius: 7px;
+      color: #aeb9d0;
+      background: transparent;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: color .18s ease, background .18s ease;
+    }
+    .mode button:hover { color: #fff; }
+    .mode button.active {
+      color: #11172a;
+      background: var(--accent);
+      box-shadow: 0 3px 12px rgba(0, 0, 0, .15);
+    }
+    .field { margin-top: 16px; }
+    label {
+      display: block;
+      margin: 0 0 8px 2px;
+      color: #c4cce0;
+      font-size: 12px;
+      font-weight: 650;
+    }
+    input, select {
+      width: 100%;
+      height: 46px;
+      padding: 0 13px;
+      border: 1px solid rgba(174, 190, 219, .18);
+      border-radius: 9px;
+      outline: none;
+      color: #f3f5ff;
+      background: rgba(10, 15, 25, .6);
+      font: inherit;
+      font-size: 13px;
+      transition: border-color .18s ease, box-shadow .18s ease;
+    }
+    input::placeholder { color: #748098; }
+    input:focus, select:focus {
+      border-color: #8998ff;
+      box-shadow: 0 0 0 3px rgba(137, 152, 255, .13);
+    }
+    select { cursor: pointer; }
+    .submit {
+      width: 100%;
+      min-height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      margin-top: 23px;
+      border: 0;
+      border-radius: 9px;
+      color: #11172a;
+      background: var(--accent);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 750;
+      cursor: pointer;
+      transition: background .18s ease, transform .18s ease, opacity .18s ease;
+    }
+    .submit:hover { background: #c5cbff; transform: translateY(-1px); }
+    .submit:disabled { opacity: .65; cursor: wait; transform: none; }
+    .submit svg { width: 16px; height: 16px; }
+    .message {
+      min-height: 20px;
+      margin: 13px 1px 0;
+      color: #c7d5ff;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .message.error { color: #ffaaaa; }
+    .card-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      margin-top: 17px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      color: #8793aa;
+      font-size: 11px;
+      line-height: 1.55;
+    }
+    .card-note svg { flex: 0 0 15px; width: 15px; height: 15px; color: #a4afff; }
+    @media (max-width: 760px) {
+      .page { width: min(520px, calc(100% - 32px)); }
+      header { height: 68px; }
+      main {
+        min-height: auto;
+        grid-template-columns: 1fr;
+        gap: 29px;
+        padding: 38px 0 48px;
+      }
+      .intro { max-width: 100%; }
+      .intro h1 { font-size: clamp(36px, 9vw, 48px); }
+      .molecule-art { display: none; }
+      .card { padding: 25px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <a class="brand" href="/" aria-label="Orbit VSEPR home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="2.4" fill="currentColor" />
+            <ellipse cx="12" cy="12" rx="9" ry="4.3" stroke="currentColor" stroke-width="1.4" transform="rotate(32 12 12)" />
+            <ellipse cx="12" cy="12" rx="9" ry="4.3" stroke="currentColor" stroke-width="1.4" transform="rotate(-32 12 12)" />
+          </svg>
+        </span>
+        ORBIT <span style="color:#76839b;font-weight:500">/ VSEPR</span>
+      </a>
+      <a class="back-link" href="/">
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="M12.5 4.5 7 10l5.5 5.5M7.5 10H17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        Back to home
+      </a>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="welcome-title">
+        <div class="eyebrow">Your molecule lab</div>
+        <h1 id="welcome-title">Explore the<br>shape of things.</h1>
+        <p class="intro-copy">Sign in to your student account and keep exploring molecular structures in three dimensions.</p>
+        <svg class="molecule-art" viewBox="0 0 360 245" fill="none" aria-hidden="true">
+          <defs>
+            <radialGradient id="core" cx="0" cy="0" r="1" gradientTransform="matrix(0 54 -54 0 180 122)" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#BBC5FF" />
+              <stop offset=".34" stop-color="#8291F4" />
+              <stop offset="1" stop-color="#8291F4" stop-opacity="0" />
+            </radialGradient>
+            <linearGradient id="orbit" x1="52" x2="312" y1="40" y2="214" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#8F9DFF" stop-opacity=".85" />
+              <stop offset="1" stop-color="#A76BDE" stop-opacity=".3" />
+            </linearGradient>
+          </defs>
+          <circle cx="180" cy="122" r="55" fill="url(#core)" opacity=".55" />
+          <ellipse cx="180" cy="122" rx="144" ry="51" stroke="url(#orbit)" stroke-width="1.3" transform="rotate(-25 180 122)" />
+          <ellipse cx="180" cy="122" rx="144" ry="51" stroke="url(#orbit)" stroke-width="1.3" transform="rotate(25 180 122)" />
+          <ellipse cx="180" cy="122" rx="144" ry="51" stroke="url(#orbit)" stroke-width="1.3" transform="rotate(90 180 122)" />
+          <circle cx="180" cy="122" r="21" fill="#6F7EE2" fill-opacity=".12" stroke="#AAB5FF" stroke-opacity=".42" />
+          <circle cx="180" cy="122" r="8" fill="#D9DEFF" />
+          <circle cx="180" cy="122" r="4" fill="#fff" />
+          <circle cx="47" cy="67" r="5" fill="#BDADFF" stroke="#E3DCFF" stroke-width="2" />
+          <circle cx="311" cy="178" r="5" fill="#8FD9F5" stroke="#D4F5FF" stroke-width="2" />
+          <circle cx="180" cy="237" r="5" fill="#E9A9F2" stroke="#F7DCFF" stroke-width="2" />
+        </svg>
+      </section>
+
+      <section class="card" aria-labelledby="title">
+        <div class="card-heading">
+          <div class="eyebrow">Student account</div>
+          <h2 id="title">Welcome back</h2>
+          <p id="form-description">Sign in to continue to your molecule lab.</p>
+        </div>
+
+        <div class="mode" role="group" aria-label="Account action">
+          <button type="button" class="active" id="login-mode" aria-pressed="true">Sign in</button>
+          <button type="button" id="register-mode" aria-pressed="false">Create account</button>
+        </div>
+
+        <form id="account-form">
+          <div class="field">
+            <label for="username">Username</label>
+            <input id="username" name="username" minlength="3" maxlength="30" autocomplete="username" placeholder="Your username" required />
+          </div>
+
+          <div class="field">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" minlength="6" autocomplete="current-password" placeholder="At least 6 characters" required />
+          </div>
+
+          <div class="field">
+            <label for="class-name">Class</label>
+            <select id="class-name" name="class_name" required>
+              <option value="6">Grade 6</option>
+              <option value="7">Grade 7</option>
+              <option value="8">Grade 8</option>
+              <option value="9">Grade 9</option>
+              <option value="10">Grade 10</option>
+              <option value="11">Grade 11</option>
+              <option value="12">Grade 12</option>
+            </select>
+          </div>
+
+          <button class="submit" id="submit-button" type="submit">
+            <span>Sign in</span>
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <path d="M4 10h11m-4-4 4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+          <p class="message" id="message" role="status" aria-live="polite"></p>
+        </form>
+
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const form = document.getElementById('account-form');
+    const title = document.getElementById('title');
+    const description = document.getElementById('form-description');
+    const password = document.getElementById('password');
+    const submitButton = document.getElementById('submit-button');
+    const submitLabel = submitButton.querySelector('span');
+    const message = document.getElementById('message');
+    const loginMode = document.getElementById('login-mode');
+    const registerMode = document.getElementById('register-mode');
+    let isRegistering = false;
+
+    fetch('/api/session').then((response) => {
+      if (response.ok) {
+        window.location.href = '/profile';
+      }
+    }).catch(() => {});
+
+    function setMode(registering) {
+      isRegistering = registering;
+      title.textContent = registering ? 'Create your account' : 'Welcome back';
+      description.textContent = registering
+        ? 'Set up your student account to get started.'
+        : 'Sign in to continue to your molecule lab.';
+      submitLabel.textContent = registering ? 'Create account' : 'Sign in';
+      password.autocomplete = registering ? 'new-password' : 'current-password';
+      loginMode.classList.toggle('active', !registering);
+      registerMode.classList.toggle('active', registering);
+      loginMode.setAttribute('aria-pressed', String(!registering));
+      registerMode.setAttribute('aria-pressed', String(registering));
+      message.textContent = '';
+      message.classList.remove('error');
+    }
+
+    loginMode.addEventListener('click', () => setMode(false));
+    registerMode.addEventListener('click', () => setMode(true));
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      message.textContent = isRegistering ? 'Creating your account…' : 'Signing in…';
+      message.classList.remove('error');
+      submitButton.disabled = true;
+
+      try {
+        const response = await fetch(isRegistering ? '/api/register' : '/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: form.elements.username.value,
+            password: form.elements.password.value,
+            class_name: form.elements.class_name.value,
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Request failed.');
+        window.location.href = '/';
+      } catch (error) {
+        message.textContent = error instanceof Error ? error.message : 'Request failed.';
+        message.classList.add('error');
+      } finally {
+        submitButton.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

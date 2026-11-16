@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VPython Page</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #101522;
+      color: #edf2ff;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+    }
+    .card {
+      width: min(700px, 90vw);
+      background: rgba(25, 33, 51, 0.9);
+      border: 1px solid rgba(179, 193, 221, 0.22);
+      border-radius: 18px;
+      padding: 30px;
+      box-shadow: 0 18px 55px rgba(0, 0, 0, 0.28);
+      text-align: center;
+    }
+    h1 {
+      margin-top: 0;
+      margin-bottom: 10px;
+    }
+    p {
+      color: #c5cfeb;
+      line-height: 1.6;
+    }
+    form {
+      display: flex;
+      gap: 10px;
+      margin: 22px auto 0;
+      max-width: 560px;
+    }
+    input {
+      flex: 1;
+      min-width: 0;
+      padding: 12px;
+      border: 1px solid rgba(179, 193, 221, 0.3);
+      border-radius: 8px;
+      background: rgba(10, 15, 25, 0.7);
+      color: white;
+      font: inherit;
+    }
+    button {
+      background: #b7c4ff;
+      color: #111827;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 18px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.65;
+      cursor: wait;
+    }
+    .message {
+      margin-top: 16px;
+      min-height: 24px;
+      color: #dfe8ff;
+    }
+    .message.error {
+      color: #ffb6b6;
+    }
+    @media (max-width: 520px) {
+      form {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>VSEPR Molecule Viewer</h1>
+    <p>Enter a molecule name or PubChem CID. The complete VSEPR structure is generated and opened in the VPython 3D viewer.</p>
+    <form id="molecule-form">
+      <input id="identifier" name="identifier" placeholder="Try water, methane, or 962" autocomplete="off" required>
+      <button id="launch" type="submit">Generate molecule</button>
+    </form>
+    <div class="message" id="message" role="status"></div>
+  </div>
+
+  <script>
+    const form = document.getElementById('molecule-form');
+    const input = document.getElementById('identifier');
+    const button = document.getElementById('launch');
+    const message = document.getElementById('message');
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      button.disabled = true;
+      message.classList.remove('error');
+      message.textContent = 'Generating the VSEPR structure…';
+      try {
+        const response = await fetch('/api/molecule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: input.value }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Could not generate this molecule.');
+        message.textContent = result.message;
+      } catch (error) {
+        message.textContent = error instanceof Error ? error.message : 'Could not generate this molecule.';
+        message.classList.add('error');
+      } finally {
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,211 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Orbit VSEPR</title>
+  <style>
+    :root {
+      --bg: #101b2b;
+      --panel: rgba(17, 28, 40, 0.75);
+      --text: #edf5ff;
+      --muted: #c1cfe8;
+      --button: #b7c4ff;
+      --button-text: #111827;
+      --shadow: rgba(0, 0, 0, 0.22);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(180deg, #0e1829 0%, #101b2b 100%);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+      padding: 0;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      backdrop-filter: blur(12px);
+      background: rgba(16, 27, 43, 0.85);
+      border-bottom: 1px solid rgba(168, 184, 222, 0.12);
+    }
+
+    .topbar-inner {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 18px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .brand {
+      font-size: clamp(1.25rem, 1.6vw, 1.8rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      color: #f3f7ff;
+      text-decoration: none;
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .nav a {
+      color: #dfe9ff;
+      text-decoration: none;
+      font-size: 1rem;
+      font-weight: 600;
+      opacity: 0.9;
+      padding: 10px 12px;
+      border-radius: 10px;
+      transition: background 0.15s ease, opacity 0.15s ease;
+    }
+
+    .nav a:hover {
+      background: rgba(255,255,255,0.06);
+      opacity: 1;
+    }
+
+    .container {
+      width: min(1200px, calc(100% - 32px));
+      margin: 80px auto 50px;
+      padding: 10px 0;
+    }
+
+    h1 {
+      margin: 0 0 18px;
+      font-size: clamp(2.2rem, 4vw, 3.6rem);
+      line-height: 1.05;
+      font-weight: 800;
+      letter-spacing: -0.06em;
+      color: #f3f6fb;
+    }
+
+    p {
+      margin: 0;
+      max-width: 1200px;
+      color: var(--muted);
+      font-size: clamp(1rem, 1.5vw, 1.5rem);
+      line-height: 1.5;
+      font-weight: 400;
+    }
+
+    .status {
+      margin-top: 28px;
+      min-height: 28px;
+      color: var(--text);
+      font-size: clamp(1rem, 1.4vw, 1.4rem);
+      font-weight: 500;
+    }
+
+    .actions {
+      margin-top: 26px;
+      display: flex;
+      gap: 18px;
+      flex-wrap: wrap;
+      justify-content: flex-start;
+    }
+
+    button, a.button {
+      min-width: 150px;
+      background: #b9c5f3;
+      color: var(--button-text);
+      border: none;
+      border-radius: 10px;
+      padding: 12px 18px;
+      font-size: clamp(0.95rem, 1.2vw, 1.15rem);
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 18px var(--shadow);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    button:hover, a.button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 22px rgba(0, 0, 0, 0.25);
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="/" class="brand">Orbit VSEPR</a>
+      <nav class="nav" aria-label="Main navigation">
+        <a href="/">Home</a>
+        <a href="/vpython">VPython</a>
+        <a href="/profile" id="nav-profile-link">Profile</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container">
+    <h1>Orbit VSEPR</h1>
+    <p>Search molecules, sign in locally, and open the dedicated VPython page without any hashing or cookie-based session tracking.</p>
+    <div class="status" id="status">Checking session…</div>
+    <div class="actions">
+      <a class="button" href="/signin.html" id="signin-link">Sign in</a>
+      <a class="button" href="/vpython" id="vpython-link">Open VPython page</a>
+      <button type="button" id="logout-button" style="display:none">Sign out</button>
+    </div>
+  </div>
+
+  <script>
+    const status = document.getElementById('status');
+    const signInLink = document.getElementById('signin-link');
+    const navProfileLink = document.getElementById('nav-profile-link');
+    const logoutButton = document.getElementById('logout-button');
+
+    async function updateSession() {
+      try {
+        const response = await fetch('/api/session');
+        if (!response.ok) {
+          status.textContent = 'No active local login found.';
+          signInLink.href = '/signin.html';
+          signInLink.textContent = 'Sign in';
+          navProfileLink.href = '/signin.html';
+          navProfileLink.textContent = 'Profile';
+          logoutButton.style.display = 'none';
+          return;
+        }
+
+        const data = await response.json();
+        status.textContent = 'Signed in as ' + data.username + '.';
+        signInLink.href = '/profile';
+        signInLink.textContent = 'Profile';
+        navProfileLink.href = '/profile';
+        navProfileLink.textContent = 'Profile';
+        logoutButton.style.display = 'inline-flex';
+      } catch (error) {
+        status.textContent = 'Session check failed.';
+      }
+    }
+
+    logoutButton.addEventListener('click', async () => {
+      await fetch('/api/logout', { method: 'POST' });
+      status.textContent = 'Signed out.';
+      signInLink.href = '/signin.html';
+      signInLink.textContent = 'Sign in';
+      navProfileLink.href = '/signin.html';
+      navProfileLink.textContent = 'Profile';
+      logoutButton.style.display = 'none';
+    });
+
+    updateSession();
+  </script>
+</body>
+</html>

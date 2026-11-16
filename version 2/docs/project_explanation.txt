@@ -1,0 +1,899 @@
+ORBIT VSEPR - VERSION 2 PROJECT WALKTHROUGH
+==========================================
+
+This document explains the Version 2 project in source order. Consecutive
+statements that work together are explained as one block. Repeated HTML and
+CSS tags are grouped by their purpose, while the program's behavior is
+described step by step.
+
+
+1. PROJECT OVERVIEW
+-------------------
+
+Orbit VSEPR is a web application for looking up molecules and displaying a
+simple animated 3D model. A browser page sends a molecule name or PubChem CID
+to a Flask server. The server looks for the molecule structure in the local molecule.dat
+cache; otherwise it asks PubChem for the molecule's SMILES notation,
+converts that notation to an atom-and-bond map, and updates the cache.
+MySQL stores accounts and the history of molecules each signed-in user
+rendered. A separate VPython process reads the structure from the cache,
+creates the 3D objects, and animates them.
+
+VSEPR means Valence Shell Electron Pair Repulsion. The project represents
+atoms, bonds, and lone pairs. Its drawing is an educational visualization,
+not a scientific molecular dynamics or geometry calculation package.
+
+
+2. MAIN APPLICATION - main.py
+-----------------------------
+
+IMPORTS
+-------
+
+from threading import Thread
+    Imports a thread so the Flask server can run while the rest of main.py
+    opens a browser and keeps the launcher alive.
+
+import csv
+    Enables reading the element data CSV file.
+
+import subprocess
+    Enables starting and stopping the separate VPython viewer process.
+
+import sys
+    Provides the path to the Python interpreter running this app.
+
+import time
+    Used for short startup waits and to keep the launcher alive.
+
+import webbrowser
+    Opens the local web app in the user's default browser.
+
+from pathlib import Path
+    Creates the directory containing the shared session file.
+
+from flask import Flask, jsonify, request, send_file
+    Flask creates the web server; jsonify makes JSON responses; request reads
+    incoming data; send_file serves the HTML page files.
+
+import mysql.connector
+    Provides MySQL Connector and its database error types. MySQL is required
+    for application startup and dynamic data storage.
+
+import pubchempy as pcp
+    Provides the PubChem client and PubChem network error type.
+
+from vsepr.database import ...
+    Imports functions that initialize MySQL, read and write accounts, list
+    molecules from render history, and record searches.
+
+from vsepr.nameProcessing import carbon_map, load_molecule_map,
+save_molecule_map
+    Imports the PubChem structure parser and the local molecule-cache
+    read/write functions.
+
+
+FILE AND CONFIGURATION CONSTANTS
+-------------------------------
+
+BASE_DIR
+    The absolute path to the Version 2 project folder. This is specific to the
+    current computer; change it if the folder is moved.
+
+DATA_DIR
+    Builds the path to the project's data folder.
+
+LOCAL_DATA_DIR
+    Builds the path to data/local, where session.txt stores the shared
+    signed-in username.
+
+STATIC_DIR
+    Builds the path to the folder containing the web pages.
+
+SESSION_FILE
+    Points to the shared local signed-in username file. User account records
+    and render history are stored in MySQL.
+
+INDEX_FILE, SIGNIN_FILE, and VPYTHON_FILE
+    Point to the home, sign-in, and molecule-search HTML files.
+
+ELEMENTS_FILE and MOLECULE_NAMES_FILE
+    Point to the element CSV and the list of suggested molecule names.
+
+MySQL configuration
+    The vsepr.database module reads MYSQL_HOST, MYSQL_PORT, MYSQL_DATABASE,
+    MYSQL_USER, and MYSQL_PASSWORD from environment variables. Defaults match
+    Version 1: localhost:3306, database cscproject, user root, password root.
+
+VPYTHON_VIEWER_FILE
+    Points to the script that starts the separate 3D viewer.
+
+viewer_process = None
+    Remembers the current viewer process, if one has been started.
+
+app = Flask(__name__)
+    Creates the Flask web application object. The route decorators below
+    register URL handlers on this object.
+
+
+DATA-LOADING HELPERS
+--------------------
+
+load_elements_csv()
+    Starts with an empty dictionary. It opens elements.csv as UTF-8 text and
+    uses csv.DictReader so each row can be accessed by column name. It strips
+    the element symbol and skips rows without one. For each valid row, it
+    stores the element name, color, covalent radius, and atomic number under
+    that symbol. It returns the dictionary. File-open errors are not caught.
+
+load_molecule_names_csv()
+    Starts with an empty list, reads molecule_names.txt one line at a time,
+    strips surrounding whitespace, and appends non-empty names. If the file is
+    missing, the file-open error propagates. Despite the function name, the
+    input file is a text list, not a CSV.
+
+LOCAL FILE AND ACCOUNT HELPERS
+------------------------------
+There are no normal account-file load/save functions. New accounts are saved
+to the MySQL users table.
+
+get_logged_in_user()
+    Ensures session.txt exists, reads and strips its contents, and returns the
+    username. An empty file is represented by None.
+
+set_logged_in_user(username)
+    Replaces session.txt contents with the supplied username.
+
+clear_logged_in_user()
+    Replaces session.txt contents with an empty string, signing out the single
+    locally tracked user.
+
+
+MOLECULE CACHE AND VIEWER HELPERS
+--------------------------------
+
+molecule_for_identifier(identifier)
+    Makes a lowercase identifier key and loads the molecule map from
+    molecule.dat. If found, it returns the cached structure. Otherwise,
+    numeric text is converted to a PubChem CID, carbon_map() looks it up and
+    converts it to the structure map, then the updated cache is saved.
+
+start_vpython_viewer(identifier, scene_width)
+    The global declaration means this function updates the module-level
+    viewer_process variable. If an earlier viewer exists and is still running,
+    it asks that process to terminate and waits up to three seconds.
+    subprocess.Popen then starts the viewer script using this app's Python
+    interpreter. The viewer receives the identifier, requested width, and a
+    fixed height of 600. Its working directory is set to BASE_DIR. Process
+    errors are not caught.
+
+
+WEB PAGE ROUTES
+---------------
+
+@app.route("/")
+def home():
+    return send_file(INDEX_FILE)
+    When the browser requests the root URL, Flask sends the home HTML file.
+
+@app.route("/signin.html")
+def signin_page():
+    return send_file(SIGNIN_FILE)
+    Serves the account page.
+
+@app.route("/vpython")
+def vpython_page():
+    return send_file(VPYTHON_FILE)
+    Serves the molecule search page.
+
+
+JSON API ROUTES
+---------------
+
+GET /api/session - api_session()
+    Reads the shared username from session.txt, verifies that username against
+    MySQL, and returns it as JSON. If the file is empty or the account no
+    longer exists, it returns HTTP 401. File and database exceptions propagate.
+
+GET /api/data - api_data()
+    Returns JSON containing element details and molecule names. Element data
+    and suggested names come from the reference CSV/text files; molecule names
+    already saved in MySQL are added to the response. File and database errors
+    propagate.
+
+POST /api/login - api_login()
+    Reads JSON from the request. Invalid JSON raises Flask's normal request
+    error. It checks that the result is a dictionary, then reads the fields.
+
+    The next condition requires a username of at least three characters, a
+    password of at least six characters, and a class from 6 through 12.
+    Invalid input returns JSON with HTTP 400.
+
+    The route queries users in MySQL. A record is accepted only when username,
+    plain-text password, and class all match. To keep Version 1's exact table
+    structure, the plain-text password is stored in its existing password_hash
+    column; no hashing is performed. On success, the username is written to
+    session.txt. If no record matches, the route returns HTTP 401. Database
+    exceptions are not caught.
+
+POST /api/register - api_register()
+    Reads and checks the same three fields as the login route. It inserts the
+    checks for a duplicate username in users, then inserts the account. An
+    existing username returns HTTP 409. Database exceptions are not caught.
+    Otherwise it writes the username to session.txt and returns HTTP 200.
+
+POST /api/logout - api_logout()
+    Clears session.txt and returns a sign-out message with HTTP 200.
+
+POST /api/molecule - api_molecule()
+    Reads the request JSON. It first requires the body to be a dictionary,
+    then requires identifier to be a non-empty string and strips whitespace.
+
+    scene_width defaults to 960. The next check requires it to be an integer
+    from 320 to 4096. It also explicitly rejects booleans because Python
+    considers bool a subclass of int.
+
+    After validating input, the route looks up the molecule, starts the viewer,
+    and records the molecule name in user_molecules if a username is in
+    session.txt. Repeated renders increment search_count and update
+    last_searched. Lookup, network, process, and database exceptions are not
+    caught and propagate to Flask.
+
+
+SERVER STARTUP
+--------------
+
+start_flask()
+    Starts Flask on 127.0.0.1, port 5000. The debug server and automatic
+    reloader are disabled. Binding to 127.0.0.1 makes the app local to this
+    computer rather than listening on other network interfaces.
+
+if __name__ == "__main__":
+    This block runs only when main.py is executed directly, not when another
+    Python module imports it.
+
+Path(LOCAL_DATA_DIR).mkdir(...), ensure_file(SESSION_FILE)
+    Ensures the directory and shared session file exist.
+
+initialize_user_database()
+    Connects with MySQL Connector, creates the configured database if needed,
+    and creates the Version 1 users and user_molecules tables if absent. It
+    leaves existing tables and records intact. Connection settings can be
+    supplied through environment variables. Database exceptions propagate.
+
+Thread(target=start_flask, daemon=True).start()
+    Starts the Flask server on a background daemon thread.
+
+time.sleep(1)
+    Gives Flask a short time to start before opening the browser.
+
+webbrowser.open("http://127.0.0.1:5000")
+    Opens the home page in the default browser.
+
+print(...)
+    Displays a reminder in the terminal.
+
+while True:
+    time.sleep(1)
+    Keeps the main launcher process running. The Flask server thread is marked
+    daemon, so it would stop when the main process exits.
+
+
+2A. MYSQL STORAGE - vsepr/database.py
+-------------------------------------
+
+IMPORTS AND SETTINGS
+    os reads the database settings from environment variables. re validates
+    the database name before it is inserted into a CREATE DATABASE statement.
+    user_database_cursor manages MySQL cursors and transactions. datetime creates
+    timestamps for render-history rows. mysql.connector is the database driver.
+
+MYSQL_HOST, MYSQL_PORT, MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD
+    Read connection settings from environment variables, with defaults
+    matching Version 1. The default database connection is localhost MySQL.
+
+connect_user_database(include_database=True)
+    Builds the connection arguments and asks MySQL Connector for a connection.
+    When creating the database, include_database=False connects to the server
+    without selecting a database first.
+
+user_database_cursor()
+    A context manager that opens a connection and dictionary cursor. On normal
+    completion it commits. If a database operation raises an exception, it
+    rolls back and re-raises the error. It always closes the cursor and
+    connection.
+
+initialize_user_database()
+    Checks that the database name contains only letters, digits, or
+    underscores. It connects to the server and creates the database if needed.
+    Then it creates the same two tables used by Version 1 if absent. The
+    users table has user_id, unique username, class_name, and password_hash.
+    Version 2 stores the plain-text password in password_hash to retain the
+    exact existing table structure; the value is not hashed.
+
+    user_molecules has user_id, molecule_name, search_count, and last_searched.
+    Its primary key is the user/molecule pair, and its foreign key points to
+    users with delete cascading. Molecule structures remain in molecule.dat,
+    not in MySQL, matching Version 1.
+
+find_user(username)
+    Reads a matching account row from users, including password_hash. Login
+    compares that column directly with the supplied password.
+
+create_user(username, password, class_name)
+    Inserts a new account. MySQL's unique username constraint rejects
+    duplicates. The password argument is inserted as plain text in the
+    existing password_hash column.
+
+list_molecule_names()
+    Returns distinct molecule names from render-history rows.
+
+remember_user_search(user_id, molecule_name)
+    Inserts a first user/molecule record or updates an existing one. Repeated
+    renders increment search_count and update last_searched, matching Version 1.
+
+
+3. CHEMISTRY LOOKUP AND SMILES PARSING - vsepr/nameProcessing.py
+---------------------------------------------------------------
+
+IMPORTS AND PROJECT PATH
+------------------------
+
+pickle
+    Reads and writes Python objects in the binary molecule cache.
+
+re
+    Searches bracketed SMILES tokens for element, hydrogen, and charge text.
+
+sys
+    Reads command-line arguments and prompts for input in the optional
+    command-line mode.
+
+Path
+    Builds paths in a way that does not depend on the current terminal folder.
+
+pubchempy as pcp
+    Looks up molecule records from PubChem.
+
+The try/except import of ELEMENTS_BY_SYMBOL first tries a package-relative
+import. The fallback supports direct script execution.
+
+PROJECT_DIR
+    Resolves the project root from this Python file's location.
+
+
+MOLECULE FILE PATH AND CACHE
+----------------------------
+
+_resolve_data_path(filename)
+    Resolves the location of the local molecule cache based on the module's
+    location, so the app does not depend on the terminal's current directory.
+
+load_molecule_map(filename=None)
+    Opens the selected cache as binary and unpickles it. A missing file means
+    there are no saved structures. It recognizes the current named-molecule
+    wrapper and the older single-structure dictionary, treating that older
+    structure as propane.
+
+save_molecule_map(molecules, filename=None)
+    Wraps the molecule map with the molecule-cache-v1 format marker and saves
+    it as a binary pickle using protocol 4. main.py uses this function after a
+    successful PubChem lookup.
+
+
+carbon_map_from_smiles(smiles)
+    This function parses SMILES text into the dictionary used by the viewer.
+    SMILES is a compact notation for atoms, bonds, branches, and rings.
+
+INITIAL STATE
+    atoms stores each parsed atom and its bonds. branches remembers atoms at
+    which a parenthesized branch began. rings remembers the first atom for a
+    ring label until that label appears again. current_atom tracks the last
+    atom. pending_bond stores a bond symbol until the next atom is added.
+    index is the current position in the SMILES string.
+
+INNER FUNCTION add_atom(symbol, aromatic=False, charge=0,
+explicit_hydrogens=0)
+    Checks that the element is present in the element table. It creates a new
+    atom dictionary with its symbol, aromatic flag, charge, explicit hydrogen
+    count, and initially empty bonds list. If there was a previous atom, it
+    records the connection in both atoms. The bond order is the pending
+    explicit order, or otherwise an aromatic order for two aromatic atoms
+    and a single bond for other atoms. It then sets the new atom as current
+    and clears the pending bond.
+
+MAIN CHARACTER LOOP
+    The while loop reads characters until the whole SMILES string has been
+    consumed.
+
+Bond characters -, =, #, :, /, and \
+    Set pending_bond to single, double, triple, aromatic, or directional
+    single bond order. The parser advances past the character and waits for
+    the next atom or ring closure.
+
+Opening parenthesis (
+    Requires a current atom, saves it on branches, and continues. This is the
+    point to which parsing returns after a side branch.
+
+Closing parenthesis )
+    Requires a saved branch point, restores that atom as current, and
+    continues. Missing matching parentheses produce an invalid-SMILES error.
+
+Dot .
+    Sets current_atom to None so the next atom starts a separate connected
+    component.
+
+Ring digits and percent labels
+    A digit is a one-character ring label. % must be followed by exactly two
+    digits. On the first occurrence, the parser saves the current atom and any
+    pending bond. On the second occurrence, it connects the saved atom to the
+    current atom. If no bond order was specified, it chooses an aromatic
+    connection when both atoms are aromatic, otherwise a single bond.
+
+Bracket atom [...]
+    Finds the closing bracket or raises an error. A regular expression reads
+    the element symbol, including lower-case aromatic notation. The symbol is
+    capitalized for lookup. Further expressions read an optional hydrogen
+    count and charge. add_atom() then creates the atom.
+
+Unbracketed atom
+    The parser tries a two-character symbol for Cl or Br; otherwise it uses
+    the current character. Lowercase symbols indicate aromatic atoms. The
+    symbol is capitalized and checked against the element table before being
+    added.
+
+END-OF-PARSE VALIDATION
+    Unclosed branches, unclosed ring labels, a trailing bond marker, or no
+    atoms cause an invalid-SMILES error.
+
+AROMATIC BOND ASSIGNMENT
+    Aromatic bonds are given a consistent alternating single/double pattern.
+    The sets track which atom pairs get double bonds and which atoms already
+    took part in one. Nitrogen atoms with explicit hydrogens are excluded from
+    this alternating assignment.
+
+ATOM LABELS
+    The code counts non-hydrogen atoms by element symbol and gives them labels
+    such as C1, C2, and O1. Explicit hydrogen atoms are omitted here because
+    the later valence logic labels attached hydrogens as they are processed.
+
+VALENCE, HYDROGEN, AND LONE-PAIR CALCULATION
+    For every non-hydrogen atom, the code totals its bond valence. Aromatic
+    bonds use the chosen alternating assignment, except aromatic nitrogen
+    bonds are counted as single for this calculation. Explicit hydrogens are
+    added to the valence.
+
+    Aromatic nitrogen has a special allowed-valence rule. Other atoms use the
+    allowed valences from the element table, adjusted by the parsed charge.
+    The first allowed valence at least as large as the current bond valence is
+    selected. If none exists, the structure is rejected as unsupported.
+
+    Missing implicit hydrogens are calculated from the difference between
+    target valence and existing valence. The atom's attached_atoms list gets
+    one entry per bond order, so a double bond repeats the neighbor twice.
+    Existing explicit hydrogens and calculated implicit hydrogens are added
+    with generated H labels.
+
+    Lone-pair count is estimated from valence electrons, charge, and total
+    valence. Each pair is added with a generated lp label. The completed
+    attached_atoms list is stored in molecular_map under the atom's label.
+
+    The function returns molecular_map, which is the atom connection map used
+    by moleculeobj.py.
+
+
+PUBCHEM CONVERSION
+------------------
+
+carbon_map_from_compound(compound)
+    Reads the compound's isomeric_smiles property, rejects a missing value,
+    and passes the notation to carbon_map_from_smiles().
+
+carbon_map(identifier, namespace="name")
+    Integer input is treated as a PubChem CID. Other input is searched as a
+    name using the selected namespace. If PubChem returns no results, a
+    ValueError is raised. Otherwise the first result is converted to a map.
+
+
+OPTIONAL COMMAND-LINE MODE
+--------------------------
+
+main(filename=None)
+    Reads the identifier from a command-line argument or asks for it
+    interactively. It checks the local cache first. If the molecule is not
+    saved, numeric text is converted to an integer, carbon_map() fetches and
+    parses it, and the resulting map is saved to the local cache.
+
+if __name__ == "__main__":
+    Runs main() only when nameProcessing.py is started directly. The web app
+    imports its functions and does not run this prompt.
+
+
+4. ELEMENT DATA AND ATOM OBJECT - vsepr/element.py
+-------------------------------------------------
+
+import csv and import Path
+    Provide CSV reading and reliable path construction.
+
+DATA_DIR
+    Resolves the data folder based on this module's own location.
+
+load_elements()
+    Opens elements.csv and uses DictReader to read each row. Each element is
+    saved under its symbol. Atomic number and valence electrons become
+    integers; mass, radius, and non-empty electronegativity become floats.
+    Blank electronegativity becomes None. Allowed valences, separated by
+    semicolons, become a tuple of integers. The completed dictionary is
+    returned.
+
+ELEMENTS_BY_SYMBOL = load_elements()
+    Loads the element table once when this module is imported.
+
+class atom
+    Defines the object representing one atom or lone pair in the 3D model.
+
+atom.__init__(symbol, name)
+    Imports VPython inside the constructor and stores the label and symbol.
+    For a lone pair (symbol lp), assigns special values for radius, color,
+    mass, atomic number, and electronegativity. For a real element, looks up
+    its data in ELEMENTS_BY_SYMBOL. A missing element is changed into a clear
+    ValueError. It then initializes velocity, the list of attached atoms, the
+    future VPython ball, and force.
+
+atom.attach(atom)
+    Adds the other atom object to this object's attached list.
+
+
+5. 3D MOLECULE CONSTRUCTION - vsepr/moleculeobj.py
+-------------------------------------------------
+
+IMPORTS
+    The first import tries to load atom as part of the vsepr package; the
+    fallback supports direct execution. Math functions and VPython shapes and
+    vectors are used for placement and drawing.
+
+class molecule
+    Bundles atom objects, their connections, and the VPython shapes for one
+    molecule.
+
+molecule.__init__(struc)
+    Creates one atom object for every unique label found among map keys and
+    values. It extracts alphabetic characters from labels to determine the
+    element/lone-pair symbol. It stores the labels, objects, and structure.
+    Then it connects atoms, checks for a ring, chooses ring or chain
+    positioning, and applies a small disturbance to start the animation.
+
+attachatms()
+    Walks through each central label and its neighbors. It connects the
+    central atom to each neighbor and adds the reverse connection when the
+    neighbor is not itself a key in the structure map.
+
+hex_to_rgb(hex_color)
+    Removes the leading #, converts each pair of hexadecimal digits into a
+    number, and scales each red/green/blue component from 0..255 to 0..1 for
+    VPython.
+
+genstchain()
+    Requests sphere creation with no preassigned central atom positions.
+
+_bond_directions(atom_count)
+    Returns no directions for zero attachments. Otherwise returns evenly
+    spaced directions around a plane, one direction per attached atom.
+
+_make_spheres(center_positions)
+    Makes the real VPython spheres and attached-atom shapes. It first finds the
+    center atoms and copies the supplied positions. A placement loop walks
+    through already-positioned centers and positions any connected center
+    atoms that do not yet have locations. Their positions are spaced using
+    radii and directions based on the parent position.
+
+    The next loop creates a sphere for every center atom and stores it on the
+    atom object. The variable n is a fallback position counter used when a
+    center has no calculated position.
+
+    For each center, it builds a unique list of attached atoms and gets
+    starting directions. Attached atoms that are not center atoms receive
+    positions around their center. For ring atoms, non-lone-pair attachments
+    are placed outward from the ring.
+
+    Lone pairs are drawn as a translucent sphere shell with two smaller
+    electron spheres, joined with VPython compound(). Other attached atoms are
+    drawn as colored spheres. Each shape is stored on its atom object, and the
+    center ball is mapped to the list of its attached shapes.
+
+cylinders()
+    Creates cylinders to depict bonds. It skips lone-pair connections and
+    tracks sorted atom-label pairs so each bond is drawn only once. The number
+    of parallel cylinders is based on how many times the neighbor appears in
+    either direction of the structure map. This lets repeated neighbors draw
+    double and triple bonds. The cylinder positions are updated later during
+    rendering. The function returns the saved cylinder records.
+
+checkcycle()
+    Runs a depth-first search across bonds between center atoms. The path and
+    visited set track the search. If it reaches an already visited atom other
+    than its parent, and the cycle has at least three atoms, that portion of
+    the path is saved as the ring. It then records whether a ring was found.
+
+gencyclic()
+    If no ring exists, falls back to genstchain(). Otherwise it calculates
+    the distances needed between neighboring ring atoms. It estimates a
+    circle radius by binary search so the angles subtended by those distances
+    total one full circle. Each ring atom receives a position on that circle,
+    and _make_spheres() positions the ring and its attachments.
+
+disturb()
+    For each center atom, gathers its non-center attachments and their bond
+    vectors. It uses a cross product to find a normal to the plane of those
+    vectors. If a normal exists, it nudges attached atoms slightly in
+    alternating directions along that normal. This avoids starting with every
+    group perfectly flat.
+
+
+6. VPYTHON ANIMATION - vsepr/rendering.py
+-----------------------------------------
+
+IMPORTS AND CONSTANTS
+    Imports the molecule builder and VPython vector, scene, color, and rate
+    tools. DAMPING reduces velocity over time. MAX_PAIR_FORCE caps repulsion
+    force, and MAX_ATOM_SPEED caps atom speed.
+
+keep_bond_lengths(bonds)
+    Repeats up to twelve times. For each bonded pair, it measures the distance
+    and compares it with the sum of atom radii. It moves both atoms halfway
+    toward correcting the distance error. If the distance is zero, it chooses
+    a fallback direction. It stops early when the largest error is tiny.
+
+bond_side(first, second)
+    Finds a unit vector perpendicular to the bond direction. It normally uses
+    the z-axis as a reference, switching to the y-axis when the bond is nearly
+    parallel to z. This direction offsets parallel cylinders for multiple
+    bonds.
+
+render(mole, width=None, height=None, background=None)
+    Sets any requested scene dimensions and a default gray background. It
+    creates the molecule object and bond cylinders. It builds unique lists of
+    real atom bonds and all geometry bonds, excluding lone-pair connections
+    from the displayed chemical bonds.
+
+    The infinite animation loop runs the following steps repeatedly:
+
+    1. Reset the force on every atom.
+    2. Compare each pair of atoms. If they are not bonded and their distance
+       is nonzero, calculate a repulsion force and apply equal/opposite forces.
+       MAX_PAIR_FORCE limits that force.
+    3. For each atom with neighbors, calculate the part of its force that is
+       perpendicular to each bond. Average the result across its unique
+       neighbors, divide by mass to obtain acceleration, and update velocity.
+    4. Apply damping and cap velocity at MAX_ATOM_SPEED.
+    5. Move the atom using its velocity and the timestep dt.
+    6. Call keep_bond_lengths() so bonds remain near their target lengths.
+    7. Move each bond cylinder to the current atom positions and recompute its
+       offset direction.
+    8. Call VPython rate() so the display can update.
+
+
+7. VIEWER PROCESS ENTRY POINT - vsepr/vpython_viewer.py
+-------------------------------------------------------
+
+The module docstring says this script launches the renderer for a molecule
+saved in the local molecule cache.
+
+sys
+    Provides the command-line arguments sent by main.py.
+
+load_molecule_map import
+    Imports the molecule-cache loader, using a relative import when the module
+    is run as part of the package and a fallback for direct script execution.
+
+main()
+    Reads the identifier, width, and height from command-line arguments.
+    Loads the molecule map and looks up the lowercased identifier. A missing
+    cache entry raises a ValueError with a clear message.
+
+    It imports render using the same relative/fallback strategy, imports
+    VPython, and calls render() with the cached structure, requested size, and
+    gray background.
+
+if __name__ == "__main__":
+    Calls main() when this viewer script is launched as a program.
+
+vsepr/__init__.py
+    Contains a short package docstring. Its presence identifies vsepr as a
+    Python package.
+
+
+8. BROWSER PAGE - static/index.html
+-----------------------------------
+
+DOCUMENT HEAD
+    The doctype selects modern HTML. The html element declares English. The
+    charset supports standard text, the viewport makes the page adapt to
+    device width, and title sets the browser tab caption.
+
+STYLE BLOCK
+    The CSS sets a dark background, light text, and a centered card. The
+    container, heading, paragraph, action, button, muted text, and status
+    rules control the page layout and appearance.
+
+BODY
+    The container displays the Orbit VSEPR title, a session status element,
+    links to sign-in and the VPython page, and a sign-out button initially
+    hidden with display:none.
+
+SCRIPT ELEMENT REFERENCES
+    document.getElementById() finds the status message, sign-in link, and
+    logout button so JavaScript can update them.
+
+updateSession()
+    Fetches /api/session. If the response is not successful, it displays that
+    no login was found, resets the sign-in link, hides sign-out, and returns.
+    Otherwise it reads the JSON username, updates the status, changes the
+    sign-in link label, and shows sign-out. The catch block displays a message
+    if the request itself fails.
+
+Logout click handler
+    Sends POST /api/logout, then updates the page text and hides the sign-out
+    button.
+
+updateSession()
+    The final call checks the session immediately after the page loads.
+
+
+9. ACCOUNT PAGE - static/signin.html
+------------------------------------
+
+DOCUMENT HEAD AND CSS
+    The head sets encoding, responsive viewport, theme color, and page title.
+    The style block defines dark colors, shared variables, the header, brand,
+    decorative artwork, form card, fields, buttons, messages, responsive
+    mobile layout, and reduced-motion behavior.
+
+PAGE HEADER
+    The brand link returns to the home page. Inline SVG elements draw the
+    small orbit logo and back arrow. The text link returns to the home page.
+
+INTRO SECTION
+    Presents the student-account introduction, headline, explanatory
+    paragraph, and decorative molecule SVG illustration.
+
+ACCOUNT CARD
+    Contains the account heading and description, sign-in/create-account
+    toggle buttons, form, username field, password field, grade selector,
+    submit button, live message, and note explaining that accounts/history are
+    in MySQL while sign-in state is in the shared local text file.
+
+FORM FIELDS
+    The username input requires a value and constrains its length to 3 through
+    30 characters. The password input is hidden while typing and requires at
+    least six characters. The select element offers grades 6 through 12.
+    These browser-side checks improve usability; the server checks its own
+    rules too.
+
+SCRIPT REFERENCES AND STATE
+    The script finds the form and elements it will update. isRegistering
+    starts false, so the page initially operates in sign-in mode.
+
+setMode(registering)
+    Stores the selected mode. It changes the title, explanatory text, submit
+    label, password autocomplete value, button styling, and aria-pressed
+    accessibility states. It also clears the old message and error styling.
+
+Mode button handlers
+    Clicking Sign in calls setMode(false); clicking Create account calls
+    setMode(true).
+
+Form submit handler
+    Prevents a full-page form submission, shows a progress message, clears
+    error styling, and disables the submit button. It sends a JSON POST to
+    /api/login or /api/register depending on the selected mode. It reads the
+    JSON response and turns unsuccessful server responses into an error.
+    Success redirects to the home page. The catch block displays the error,
+    and finally re-enables the button.
+
+
+10. MOLECULE SEARCH PAGE - static/vpython_page.html
+---------------------------------------------------
+
+DOCUMENT HEAD AND CSS
+    Sets the page title and styles a centered card, explanatory text, input,
+    submit button, message, and mobile layout that stacks the form vertically.
+
+BODY FORM
+    The page displays the VSEPR viewer heading and instructions. The form
+    accepts a molecule name or PubChem CID. The message element reports
+    progress, success, or failure.
+
+SCRIPT REFERENCES
+    Finds the form, input, launch button, and message element.
+
+Submit handler
+    Prevents normal form navigation, disables the button, clears error
+    styling, and displays a progress message. It sends the identifier as JSON
+    in a POST request to /api/molecule. It displays the server's success text
+    or throws an Error using the server's error message. The catch block
+    displays the error and marks it red; finally re-enables the button.
+
+
+11. DATA AND DEPENDENCY FILES
+-----------------------------
+
+data/elements.csv
+    A table with one row per element. Columns include atomic number, symbol,
+    name, atomic mass, covalent radius, electronegativity, display color,
+    valence-electron count, and allowed valences. element.py uses these values
+    to build atom objects; nameProcessing.py uses valence data to estimate
+    hydrogens and lone pairs.
+
+data/molecule_names.txt
+    A newline-separated list of suggested molecule names. main.py returns
+    these names through /api/data.
+
+data/molecule.dat
+    The local binary pickle cache of molecule structures. It uses the same
+    cache format as Version 1.
+
+data/local/users.txt
+    Version 2 does not use this file. Account records are stored in MySQL.
+
+data/local/session.txt
+    Stores the single shared signed-in username. This is the one account datum
+    intentionally kept in a local text file; it is not a cookie or a separate
+    session for each browser.
+
+requirements.txt
+    Lists the Python packages used by the project: Flask, the MySQL connector,
+    PubChemPy, and VPython.
+
+__pycache__ folders
+    Contain Python-generated bytecode cache files. They are not source code
+    and do not need to be explained or edited.
+
+
+12. END-TO-END REQUEST FLOW
+---------------------------
+
+1. The user starts main.py.
+2. main.py starts Flask on 127.0.0.1:5000 and opens the home page.
+3. The user opens the VPython page and submits a molecule name or CID.
+4. The browser sends the identifier to POST /api/molecule.
+5. main.py checks molecule.dat. If there is no saved structure, it calls
+   carbon_map() to query PubChem and parse the returned SMILES.
+6. The structure map is saved to molecule.dat.
+7. main.py launches vsepr/vpython_viewer.py as a separate process.
+8. The viewer loads the structure from molecule.dat and calls rendering.render().
+9. If a user is signed in, main.py records that user's render in
+   user_molecules in MySQL.
+10. moleculeobj.py creates and positions atoms, lone pairs, and bond shapes.
+11. rendering.py repeatedly applies repulsion, movement, bond correction,
+    and scene updates.
+
+
+13. IMPORTANT PROJECT LIMITS
+----------------------------
+
+Accounts and rendered-molecule history are stored in MySQL. Passwords are
+stored as readable plain text at the user's request. Anyone with database
+access can read them; do not use real or reused passwords.
+
+The sign-in state is one shared local text file, not browser-specific. Signing
+in from one browser changes the local state seen by another. The app does not
+use cookies.
+
+The web server binds to 127.0.0.1 and is intended for use on the same computer.
+MySQL Connector and a running MySQL server are required for app startup. The
+element CSV, suggested-molecule text list, and molecule structure cache remain
+local, matching Version 1.
+
+The sign-in page and session API display account status, but the molecule
+route still allows anonymous rendering. The molecule search-history table only
+records a render when a username is signed in.
+
+Version 1's users table already contains password hashes. Version 2 does not
+hash passwords and compares the stored value directly. Existing hashed
+Version 1 accounts therefore cannot sign in in this mode; the app explains
+that a new username is needed. Their passwords cannot be recovered from the
+stored hashes without using the hashing check that was explicitly removed.
+
+The project path is hard-coded in main.py. If Version 2 is moved, update
+BASE_DIR before starting the application.

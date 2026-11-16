@@ -1,0 +1,262 @@
+PLAIN-LANGUAGE GUIDE TO THE WHOLE VSEPR PROJECT
+===============================================
+
+This guide explains how the project's files work together and how to follow
+the program from the browser to the molecule data and 3D viewer. For the
+line-numbered walkthrough of the Python files and browser pages, see
+project_line_by_line.txt in this folder.
+
+The project is a local molecule viewer and builder. Its main jobs are to look
+up molecule structures, turn those structures into atom-and-bond data, show
+them in 3D, and let students sign in to see recommendations based on searches.
+
+
+THE MAIN FILES AND WHAT THEY DO
+-------------------------------
+
+app.py and vsepr/app.py
+  app.py is the root launcher. vsepr/app.py contains the Flask application:
+  its routes serve browser pages from static/, receive JSON API requests,
+  handle student accounts and recommendations, and start the 3D viewer. It
+  runs locally on 127.0.0.1:8000.
+
+vsepr/element.py and data/elements.csv
+  elements.csv is the element information table: symbols, names, masses,
+  covalent radii, colors, valence electrons, and allowed valences.
+  element.py reads that table and creates atom objects with chemical and
+  movement information.
+
+molecule.dat and molecule_names.txt in data/
+  molecule.dat is a binary saved-molecule cache containing structures.
+  molecule_names.txt is a readable list of display names for suggestions.
+
+vsepr/nameProcessing.py
+  Reads and writes the saved molecule cache, converts SMILES descriptions
+  into atom-and-bond maps, and can look up new compounds through PubChemPy.
+
+vsepr/moleculeobj.py
+  Turns a molecule map into atom objects and VPython spheres. It places
+  connected atoms, detects a ring, draws real bonds, and gives flat layouts a
+  small starting disturbance so repulsion can spread them into 3D. It imports
+  only the math functions and VPython objects it uses.
+
+vsepr/rendering.py
+  Runs the VPython animation. It calculates repulsion between unbonded
+  electron domains, moves atoms, keeps bond lengths fixed, and updates bond
+  cylinders. It also imports only the VPython objects used by the animation.
+
+vsepr/vpython_viewer.py
+  Is the small program vsepr/app.py starts as a separate module to render a
+  saved molecule in VPython.
+
+scripts/populate_molecules.py
+  Builds the starter set of 100 molecule structures from SMILES strings and
+  writes molecule.dat and molecule_names.txt in data/.
+
+static/index.html
+  The search and visualization page. It sends molecule requests to app.py,
+  displays viewer information, and shows recommendations when signed in.
+
+static/create.html
+  The molecule-building page. It lets a student add atoms and connections,
+  then asks app.py whether the structure matches one in the saved library.
+
+static/signin.html
+  The sign-in and account-creation page. It sends username, password, and
+  grade details to app.py.
+
+requirements.txt
+  Lists the Python packages the project expects: mysql-connector-python,
+  Flask, pubchempy, and vpython.
+  Each package supports a current feature: database access, the web app,
+  PubChem lookups, and 3D rendering. The other imported modules come from
+  Python's standard library or this project, so removing one of these package
+  dependencies would remove functionality.
+
+scripts/test.py
+  A small command-line entry point that asks for a molecule and passes the
+  result to the renderer. It is not an automated test suite.
+
+vsepr/userdata.py
+  This file is currently empty and has no effect on the project.
+
+
+HOW THE FILES WORK TOGETHER
+---------------------------
+
+1. The student runs app.py, which starts the Flask application in
+   vsepr/app.py. Flask serves browser pages from static/.
+2. The page sends an HTTP request with JSON data when the student searches,
+   signs in, or tries the builder's Visualize button.
+3. Flask routes in vsepr/app.py validate the request and call the matching
+   Python functions. API responses are JSON; pages and other static assets
+   are served from static/.
+4. vsepr/nameProcessing.py loads a structure from data/molecule.dat or asks
+   PubChemPy for a new structure. A structure is represented as atom labels
+   and lists of connected labels.
+5. vsepr/moleculeobj.py creates atom objects and 3D shapes from that structure.
+6. vsepr/rendering.py moves the atoms using repulsion and fixed bond lengths.
+7. vsepr/vpython_viewer.py runs that renderer in its own process. The Flask
+   app gives the browser its local viewer URL, which the page loads inside an
+   iframe.
+
+
+HOW A MOLECULE STRUCTURE IS REPRESENTED
+---------------------------------------
+
+The program uses a map (a Python dictionary) where each central atom label
+points to the labels connected to it. For example, a simplified water map
+could look like:
+
+    {"O1": ["H1", "H2", "lp1", "lp2"]}
+
+An atom label contains its element-like name plus a number so that atoms of
+the same element can be told apart. "lp" labels represent lone-pair electron
+domains. Repeated neighbor labels can represent a double or triple bond.
+The map is converted to a binary cache so it can be loaded quickly later.
+
+
+THE BROWSER PAGES
+
+index.html
+  Its HTML describes the search form, shortcuts, recommendations section, and
+  viewer area. Its CSS controls the page appearance and smaller-screen layout.
+  Its JavaScript loads molecule suggestions and recommendations, posts search
+  requests to /api/molecule, and fills in the viewer details and iframe.
+
+create.html
+  Its HTML describes the element list and drawing canvas. Its CSS styles the
+  controls and canvas. Its JavaScript stores the currently drawn atoms and
+  bonds in arrays, handles clicks and dragging, and sends the structure to
+  /api/visualize-built.
+
+signin.html
+  Its HTML makes the sign-in and grade form. Its CSS styles the account card.
+  Its JavaScript switches between sign-in and registration, sends the form to
+  the matching API route, and returns a successful user to the home page.
+
+
+IMPORTANT WEB ADDRESSES
+-----------------------
+
+GET /api/session
+  Checks whether this browser is signed in and returns the student's name
+  and grade.
+
+GET /api/recommendations
+  Returns popular molecules for the student's grade and the student's own
+  recent search history.
+
+GET /api/elements
+  Returns element details used by the builder.
+
+GET /api/molecules
+  Returns saved molecule names for search suggestions.
+
+POST /api/molecule
+  Looks up a molecule name or PubChem CID and starts its viewer.
+
+POST /api/visualize-built
+  Checks the builder's atoms and bonds against the saved library, then starts
+  the viewer if there is a match.
+
+POST /api/account/register, /api/account/login, /api/account/logout
+  Create an account, sign in, or sign out.
+
+
+DATABASE AND STUDENT ACCOUNTS
+-----------------------------
+
+vsepr/app.py creates two MySQL tables:
+
+users
+  user_id       A number MySQL assigns to each account.
+  username      The account name; it must be unique.
+  class_name    The student's grade, stored as text from 6 to 12.
+  password_hash A salted password hash, not the original password.
+
+user_molecules
+  user_id       Which student searched for a molecule.
+  molecule_name The searched molecule's name.
+  search_count  How many times this student searched for it.
+  last_searched The most recent search time.
+
+The user_molecules table keeps one row for each student-and-molecule pair,
+incrementing its count when that student searches again. Its user_id is a
+foreign key to users, so deleting an account also deletes that account's
+search history.
+
+Passwords are stored as salted, repeated hashes instead of readable
+passwords. The browser receives a random session cookie after sign-in. The
+token-to-user connection is stored in the running Python program's memory.
+Because sessions are in memory, restarting app.py signs out all students, but
+the MySQL account and search records remain.
+
+
+STARTING THE PROJECT
+--------------------
+
+Install the packages listed in requirements.txt and make sure MySQL is
+running with a user that can create/use the configured database. The database
+settings are read from MYSQL_HOST, MYSQL_PORT, MYSQL_DATABASE, MYSQL_USER, and
+MYSQL_PASSWORD environment variables.
+
+Run app.py from the VSEPR project root, then open:
+
+    http://127.0.0.1:8000
+
+Press Ctrl+C in the terminal to stop the server. It also asks the running
+VPython viewer process to stop.
+
+vsepr/app.py uses Flask's built-in local server with threaded request handling.
+This setup is intended for running the project locally.
+
+Run `python -m scripts.populate_molecules` from the project root to regenerate
+the starter molecule cache and name list from the 100 SMILES entries in that
+file. Do not edit data/molecule.dat as if it were a text file; it is a binary
+pickle file.
+
+
+IMPORTANT IDEAS IN SIMPLE WORDS
+-------------------------------
+
+HTTP request
+  A message the browser sends to the Python server asking it to do something.
+
+API
+  A set of web addresses the browser can call to get data or request an action.
+
+JSON
+  A text format for sending organized data between the browser and Python.
+
+SMILES
+  A compact text notation for describing atoms and their bonds. The generator
+  and name-processing code turn it into the project's atom map.
+
+Graph
+  A set of points (atoms) and connections (bonds) between those points.
+
+Graph matching
+  Checking whether two molecule diagrams have the same atoms and connections,
+  even if their atom labels differ.
+
+Environment variable
+  A setting stored outside the Python source code. The app reads its MySQL
+  connection details this way.
+
+Iframe
+  A page area that can load a separate web page. The home and builder pages use
+  an iframe to show the VPython viewer.
+
+
+WHAT IS NOT A SOURCE FILE
+-------------------------
+
+The __pycache__ folder contains Python's automatically generated bytecode
+cache. It is not hand-written project logic and can be recreated by Python.
+The molecule.dat file is generated binary data, so it cannot be explained as
+ordinary text lines. Its creation and use are explained above and in the
+walkthrough.
+
+The project runs locally for learning and demonstration. The server binds to
+127.0.0.1, which means it is intended for use on the same computer.

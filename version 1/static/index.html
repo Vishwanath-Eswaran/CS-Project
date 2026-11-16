@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101522">
+  <title>Orbit — Molecule Viewer</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #101522;
+      color: #eef2ff;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+      --muted: #9da8be;
+      --line: rgba(179, 193, 221, .13);
+      --panel: rgba(23, 31, 48, .88);
+    }
+
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body {
+      min-width: 320px;
+      min-height: 100vh;
+      margin: 0;
+      background:
+        radial-gradient(ellipse at 78% 12%, rgba(84, 100, 177, .16), transparent 34rem),
+        radial-gradient(ellipse at 0% 85%, rgba(77, 117, 161, .10), transparent 32rem),
+        #101522;
+    }
+    .shell { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
+    header { height: 82px; display: flex; align-items: center; border-bottom: 1px solid var(--line); }
+    .brand { display: flex; align-items: center; gap: 12px; font-size: 15px; font-weight: 700; letter-spacing: .02em; }
+    .brand-mark {
+      width: 34px; height: 34px; display: grid; place-items: center; border-radius: 11px;
+      color: #dce1ff; background: linear-gradient(145deg, #6676db, #8b67c6);
+      box-shadow: 0 6px 22px rgba(111, 113, 215, .28);
+    }
+    .brand-mark svg { width: 21px; height: 21px; }
+    .top-note { margin-left: auto; color: var(--muted); font-size: 12px; }
+    main { padding: 48px 0 56px; }
+    .intro { max-width: 660px; margin-bottom: 30px; }
+    .eyebrow { color: #a4afff; font-size: 11px; font-weight: 750; letter-spacing: .17em; text-transform: uppercase; }
+    h1 { margin: 10px 0 9px; font-size: clamp(30px, 5vw, 46px); line-height: 1.08; letter-spacing: -.045em; }
+    .intro p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.7; }
+    .search-panel {
+      display: flex; align-items: end; gap: 12px; padding: 18px;
+      border: 1px solid var(--line); border-radius: 17px; background: var(--panel);
+      box-shadow: 0 18px 55px rgba(0, 0, 0, .15); backdrop-filter: blur(16px);
+    }
+    .input-wrap { min-width: 0; flex: 1; }
+    label { display: block; margin: 0 0 9px 2px; color: #c4cce0; font-size: 12px; font-weight: 650; }
+    .input-row { position: relative; }
+    .search-icon { position: absolute; top: 50%; left: 14px; width: 17px; height: 17px; color: #78859e; transform: translateY(-50%); pointer-events: none; }
+    input {
+      width: 100%; height: 48px; padding: 0 15px 0 43px; border: 1px solid rgba(174, 190, 219, .18);
+      border-radius: 10px; outline: none; color: #f3f5ff; background: rgba(10, 15, 25, .6); font: inherit; font-size: 14px;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    input::placeholder { color: #748098; }
+    input:focus { border-color: #8998ff; box-shadow: 0 0 0 3px rgba(137, 152, 255, .13); }
+    button {
+      flex: 0 0 auto; height: 48px; padding: 0 20px; border: 0; border-radius: 10px;
+      color: #11172a; background: #b2bbff; font: inherit; font-size: 13px; font-weight: 750;
+      cursor: pointer; transition: background .2s, transform .2s;
+    }
+    button:hover { background: #c5cbff; transform: translateY(-1px); }
+    button:disabled { opacity: .65; cursor: wait; transform: none; }
+    .hint { margin: 10px 2px 0; color: #8793aa; font-size: 11px; }
+    .viewer {
+      position: relative; min-height: 450px; margin-top: 20px; overflow: hidden;
+      border: 1px solid var(--line); border-radius: 18px;
+      background:
+        radial-gradient(ellipse at 50% 45%, rgba(88, 104, 161, .12), transparent 42%),
+        linear-gradient(155deg, rgba(28, 37, 57, .88), rgba(17, 23, 36, .96));
+    }
+    .viewer-head { position: absolute; inset: 20px 22px auto; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; pointer-events: none; }
+    .molecule-title { font-size: 14px; font-weight: 720; }
+    .molecule-details { margin-top: 5px; color: var(--muted); font-size: 11px; }
+    .view-tag { padding: 6px 9px; border: 1px solid var(--line); border-radius: 7px; color: #a9b5cb; background: rgba(12, 17, 28, .42); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
+    .molecule-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+    .empty-state { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; padding: 24px; text-align: center; pointer-events: none; }
+    .empty-icon { width: 64px; height: 64px; display: grid; place-items: center; margin-bottom: 16px; border: 1px solid rgba(176, 190, 226, .13); border-radius: 20px; color: #9aa8ff; background: rgba(128, 141, 215, .08); }
+    .empty-icon svg { width: 31px; height: 31px; }
+    .empty-title { color: #dce3f5; font-size: 14px; font-weight: 650; }
+    .empty-copy { max-width: 310px; margin-top: 7px; color: #8995ac; font-size: 12px; line-height: 1.6; }
+    .message { position: absolute; inset: auto 18px 18px; z-index: 2; padding: 11px 14px; border: 1px solid rgba(255, 130, 130, .25); border-radius: 9px; color: #ffb1b1; background: rgba(64, 27, 38, .92); font-size: 12px; }
+    .viewer-footer { position: absolute; inset: auto 20px 16px; display: flex; align-items: center; justify-content: space-between; color: #000; font-size: 10px; pointer-events: none; }
+    .legend { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .legend-item { display: inline-flex; gap: 5px; align-items: center; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .quick-row { display: flex; align-items: center; gap: 8px; margin: 16px 2px 0; color: #8591a9; font-size: 11px; flex-wrap: wrap; }
+    .quick-row button { height: auto; padding: 6px 10px; border: 1px solid var(--line); border-radius: 7px; color: #b6c0d5; background: rgba(30, 39, 57, .62); font-size: 10px; font-weight: 550; }
+    .quick-row button:hover { color: white; background: rgba(70, 81, 118, .55); transform: none; }
+    .account-links { display: flex; align-items: center; gap: 18px; margin-left: auto; }
+    .account-links a { color: #b6c0d5; font-size: 12px; text-decoration: none; }
+    .account-links a:hover { color: white; }
+    .recommendations {
+      margin-top: 20px; padding: 18px; border: 1px solid var(--line);
+      border-radius: 16px; background: var(--panel);
+    }
+    .recommendations-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .recommendations h2 { margin: 0; font-size: 16px; }
+    .recommendations-head p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
+    .recommendations-head button {
+      height: 34px; padding: 0 12px; border: 1px solid var(--line);
+      color: #dce3f5; background: rgba(30, 39, 57, .62); font-size: 11px;
+    }
+    .recommendation-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 16px; }
+    .recommendation-columns h3 { margin: 0 0 8px; color: #c4cce0; font-size: 12px; }
+    .recommendation-columns ul { margin: 0; padding-left: 20px; color: #dce3f5; font-size: 12px; line-height: 1.9; }
+    .recommendation-columns li span { color: var(--muted); }
+    .loading { color: #ccd4ff; }
+    @media (max-width: 620px) {
+      .shell { width: min(100% - 28px, 1120px); }
+      header { height: 68px; }
+      main { padding-top: 34px; }
+      .search-panel { align-items: stretch; flex-direction: column; padding: 14px; }
+      .search-panel button { width: 100%; }
+      .viewer { min-height: 390px; }
+      .viewer-footer { align-items: flex-start; flex-direction: column; gap: 7px; }
+      .top-note { font-size: 10px; }
+      .recommendation-columns { grid-template-columns: 1fr; }
+      .account-links { gap: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="shell" style="display:flex;align-items:center;width:min(1120px,calc(100% - 40px))">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="2.4" fill="currentColor"/><ellipse cx="12" cy="12" rx="9" ry="4.3" stroke="currentColor" stroke-width="1.4" transform="rotate(32 12 12)"/><ellipse cx="12" cy="12" rx="9" ry="4.3" stroke="currentColor" stroke-width="1.4" transform="rotate(-32 12 12)"/></svg>
+        </span>
+        ORBIT <span style="color:#76839b;font-weight:500">/ VSEPR</span>
+      </div>
+      <nav class="account-links" aria-label="Main navigation">
+        <a href="/signin.html" id="sign-in-link">Sign in</a>
+        <a href="/create.html">Build a molecule</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="intro">
+      <div class="eyebrow">Explore molecular structure</div>
+      <h1>Bring molecules<br>into view.</h1>
+      <p>Search a molecule by name or PubChem CID and explore its VPython structure in 3D.</p>
+    </section>
+
+    <form class="search-panel" id="search-form">
+      <div class="input-wrap">
+        <label for="molecule-input">Molecule name or PubChem CID</label>
+        <div class="input-row">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8" stroke="currentColor" stroke-width="1.7"/><path d="m16 16 4.2 4.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          <input id="molecule-input" name="identifier" list="molecule-options" placeholder="Try water, caffeine, or 962" autocomplete="off" required>
+          <datalist id="molecule-options"></datalist>
+        </div>
+        <div class="hint">Saved molecules load instantly. New searches are looked up with PubChem.</div>
+      </div>
+      <button id="submit-button" type="submit">Visualize molecule <span aria-hidden="true">→</span></button>
+    </form>
+
+    <div class="quick-row">
+      <span>Try one:</span>
+      <button type="button" data-molecule="Water">Water</button>
+      <button type="button" data-molecule="Methane">Methane</button>
+      <button type="button" data-molecule="Benzene">Benzene</button>
+      <button type="button" data-molecule="Caffeine">Caffeine</button>
+    </div>
+
+    <section class="recommendations" id="recommendations" hidden>
+      <div class="recommendations-head">
+        <div>
+          <h2>Welcome, <span id="signed-in-name"></span></h2>
+          <p>Grade <span id="signed-in-class"></span> · Your recommendations</p>
+        </div>
+        <button id="sign-out-button" type="button">Sign out</button>
+      </div>
+      <div class="recommendation-columns">
+        <div>
+          <h3>Popular in your class</h3>
+          <ul id="class-recommendations"></ul>
+        </div>
+        <div>
+          <h3>Your recent searches</h3>
+          <ul id="personal-recommendations"></ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="viewer" aria-label="Molecule visualization">
+      <div class="viewer-head" id="viewer-head" hidden>
+        <div><div class="molecule-title" id="molecule-title"></div><div class="molecule-details" id="molecule-details"></div></div>
+        <div class="view-tag">VPython · 3D</div>
+      </div>
+      <iframe class="molecule-frame" id="molecule-frame" title="Interactive VPython molecule model" hidden></iframe>
+      <div class="empty-state" id="empty-state">
+        <div class="empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="3" fill="currentColor"/><ellipse cx="16" cy="16" rx="13" ry="6" stroke="currentColor" stroke-width="1.3" transform="rotate(34 16 16)"/><ellipse cx="16" cy="16" rx="13" ry="6" stroke="currentColor" stroke-width="1.3" transform="rotate(-34 16 16)"/></svg>
+        </div>
+        <div class="empty-title">Your molecule will appear here</div>
+        <div class="empty-copy">Enter a molecule above to render it with VPython. Drag to rotate and scroll to zoom.</div>
+      </div>
+      <div class="viewer-footer" id="viewer-footer" hidden>
+        <div class="legend" id="legend"></div>
+        <div>Drag to rotate · Scroll to zoom</div>
+      </div>
+      <div class="message" id="error-message" role="alert" hidden></div>
+    </section>
+  </main>
+
+  <script>
+    const form = document.querySelector("#search-form");
+    const input = document.querySelector("#molecule-input");
+    const submitButton = document.querySelector("#submit-button");
+    const viewer = document.querySelector(".viewer");
+    const moleculeFrame = document.querySelector("#molecule-frame");
+    const errorMessage = document.querySelector("#error-message");
+    const emptyState = document.querySelector("#empty-state");
+    const viewerHead = document.querySelector("#viewer-head");
+    const viewerFooter = document.querySelector("#viewer-footer");
+    const moleculeTitle = document.querySelector("#molecule-title");
+    const moleculeDetails = document.querySelector("#molecule-details");
+    const legend = document.querySelector("#legend");
+    const options = document.querySelector("#molecule-options");
+    const signInLink = document.querySelector("#sign-in-link");
+    const recommendations = document.querySelector("#recommendations");
+    const classRecommendations = document.querySelector("#class-recommendations");
+    const personalRecommendations = document.querySelector("#personal-recommendations");
+
+    function showRecommendations(list, molecules) {
+      list.replaceChildren();
+      if (molecules.length === 0) {
+        const item = document.createElement("li");
+        item.textContent = "No searches yet.";
+        list.append(item);
+        return;
+      }
+      for (const molecule of molecules) {
+        const item = document.createElement("li");
+        item.append(document.createTextNode(molecule.name + " "));
+        const count = document.createElement("span");
+        count.textContent = `(${molecule.searches} searches)`;
+        item.append(count);
+        list.append(item);
+      }
+    }
+
+    async function loadRecommendations() {
+      try {
+        const sessionResponse = await fetch("/api/session");
+        if (!sessionResponse.ok) return;
+        const user = await sessionResponse.json();
+        const response = await fetch("/api/recommendations");
+        if (!response.ok) throw new Error("Could not load recommendations.");
+        const data = await response.json();
+        document.querySelector("#signed-in-name").textContent = user.username;
+        document.querySelector("#signed-in-class").textContent = user.class_name;
+        showRecommendations(classRecommendations, data.class_recommendations);
+        showRecommendations(personalRecommendations, data.personal_recommendations);
+        recommendations.hidden = false;
+        signInLink.hidden = true;
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    async function loadSuggestions() {
+      try {
+        const response = await fetch("/api/molecules");
+        if (!response.ok) return;
+        const data = await response.json();
+        options.replaceChildren(...data.molecules.map((name) => {
+          const option = document.createElement("option");
+          option.value = name;
+          return option;
+        }));
+      } catch {
+        // Suggestions are optional; manual molecule lookup still works.
+      }
+    }
+
+    function showError(message) {
+      errorMessage.textContent = message;
+      errorMessage.hidden = false;
+    }
+
+    function hideError() {
+      errorMessage.hidden = true;
+      errorMessage.textContent = "";
+    }
+
+    function formulaFor(atoms) {
+      const counts = {};
+      for (const atom of atoms) {
+        if (atom.symbol !== "lp") counts[atom.symbol] = (counts[atom.symbol] || 0) + 1;
+      }
+      return Object.keys(counts)
+        .sort((a, b) => a === "C" ? -1 : b === "C" ? 1 : a === "H" ? -1 : b === "H" ? 1 : a.localeCompare(b))
+        .map((symbol) => symbol + (counts[symbol] > 1 ? counts[symbol] : ""))
+        .join("");
+    }
+
+    function render(data) {
+      const realAtoms = data.atoms.filter((atom) => atom.symbol !== "lp").length;
+      const lonePairs = data.atoms.length - realAtoms;
+      const realBonds = data.bonds.filter((bond) =>
+        data.atoms[bond.source].symbol !== "lp" && data.atoms[bond.target].symbol !== "lp"
+      ).length;
+      moleculeTitle.textContent = data.name;
+      moleculeDetails.textContent = `${formulaFor(data.atoms)} · ${realAtoms} atoms · ${realBonds} bonds${lonePairs ? ` · ${lonePairs} lone pairs` : ""}`;
+      const elements = [...new Set(data.atoms.map((atom) => atom.symbol))];
+      legend.replaceChildren(...elements.map((symbol) => {
+        const atom = data.atoms.find((candidate) => candidate.symbol === symbol);
+        const item = document.createElement("span");
+        item.className = "legend-item";
+        const dot = document.createElement("span");
+        dot.className = "dot";
+        dot.style.backgroundColor = atom.color;
+        const label = document.createElement("span");
+        label.textContent = symbol === "lp" ? "Lone pair" : symbol;
+        item.append(dot, label);
+        return item;
+      }));
+      moleculeFrame.hidden = false;
+      moleculeFrame.src = data.viewer_url;
+      emptyState.hidden = true;
+      viewerHead.hidden = false;
+      viewerFooter.hidden = false;
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const identifier = input.value.trim();
+      if (!identifier) return;
+      hideError();
+      submitButton.disabled = true;
+      submitButton.innerHTML = '<span class="loading">Finding molecule…</span>';
+      try {
+        const response = await fetch("/api/molecule", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            identifier,
+            scene_width: Math.round(viewer.clientWidth - 20),
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Could not load this molecule.");
+        render(data);
+        await loadRecommendations();
+      } catch (error) {
+        showError(error instanceof Error ? error.message : "Could not load this molecule.");
+      } finally {
+        submitButton.disabled = false;
+        submitButton.innerHTML = 'Visualize molecule <span aria-hidden="true">→</span>';
+      }
+    });
+
+    document.querySelectorAll("[data-molecule]").forEach((button) => {
+      button.addEventListener("click", () => {
+        input.value = button.dataset.molecule;
+        form.requestSubmit();
+      });
+    });
+
+    document.querySelector("#sign-out-button").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        const response = await fetch("/api/account/logout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        if (!response.ok) throw new Error("Could not sign out.");
+        window.location.reload();
+      } catch (error) {
+        showError(error instanceof Error ? error.message : "Could not sign out.");
+        button.disabled = false;
+      }
+    });
+
+    loadSuggestions();
+    loadRecommendations();
+  </script>
+</body>
+</html>

@@ -1,0 +1,1059 @@
+WHOLE PROJECT: LINE-GROUP WALKTHROUGH
+=====================================
+
+This guide covers the readable source files in the VSEPR project. The root
+app.py is a small launcher; the detailed server walkthrough covers
+vsepr/app.py. It follows each file's own line numbers. A range means the lines
+work together as one small task. Blank lines do not run instructions.
+
+The Flask server walkthrough comes first because it connects the other parts.
+The remaining Python modules, browser pages, and text data are explained
+after it. Data files are in data/, browser pages are in static/, and helper
+programs are in scripts/. molecule.dat is binary data and has no readable
+source lines, so its format and use are explained in the project overview.
+
+CONTENTS
+--------
+
+1. app.py and vsepr/app.py         (launcher and Flask server)
+2. vsepr/element.py and data/elements.csv (element properties and atoms)
+3. vsepr/nameProcessing.py        (SMILES, PubChem, and molecule cache)
+4. vsepr/moleculeobj.py           (atom placement and bond graphics)
+5. vsepr/rendering.py             (repulsion-based 3D animation)
+6. vsepr/vpython_viewer.py        (launch one saved 3D scene)
+7. scripts/populate_molecules.py  (make the starter library)
+8. scripts/test.py                (command-line viewer entry point)
+9. static/index.html               (search and recommendations page)
+10. static/create.html             (molecule builder)
+11. static/signin.html             (student sign-in)
+12. requirements.txt and data files
+
+
+1. app.py AND vsepr/app.py — THE FLASK SERVER
+---------------------------------------------
+
+The root app.py imports the Flask app and main() from vsepr/app.py, then calls
+main() when launched directly. The root file keeps the simple `python app.py`
+startup command.
+
+Lines 1-929 of vsepr/app.py are explained in the walkthrough below. The server
+connects the browser, MySQL, PubChem lookup, saved molecule structures, and
+VPython viewer.
+
+
+LINES 1-18: IMPORTS
+-------------------
+
+Line 1 is a short description of this program.
+
+Lines 3-18 import standard-library tools the program needs:
+
+  hashlib and hmac help save and check passwords safely.
+  json reads and writes JSON messages for the browser.
+  os reads settings from the computer's environment.
+  re checks text against patterns.
+  secrets creates hard-to-guess random values.
+  socket finds an available local network port for the viewer.
+  subprocess starts and stops another Python program.
+  sys finds the Python program currently running this code.
+  threading provides locks so shared data is not changed by two requests at
+    exactly the same time.
+  time is used for waiting and checking time limits.
+  Counter counts repeated items.
+  contextmanager helps manage opening and closing a database cursor.
+  datetime and timezone record search times.
+  Path builds file and folder paths.
+
+Lines 19-21 import the external packages used by the application:
+
+  Flask provides the web application, request handling, and JSON responses.
+  pubchempy communicates with PubChem.
+  mysql.connector communicates with MySQL.
+
+
+LINES 23-28: IMPORT PROJECT CODE
+--------------------------------
+
+The try block imports the element data and molecule functions using package
+names. This is the form used when the project is run as a package.
+
+If that import form does not work, the except block tries direct imports. This
+lets the program also work when launched directly from the VSEPR folder.
+
+ELEMENTS_BY_SYMBOL contains information about chemical elements. The molecule
+functions load, look up, and save molecule structures.
+
+
+LINES 31-49: SETTINGS AND SHARED STATE
+--------------------------------------
+
+BASE_DIR is the project root (the parent of the vsepr package). STATIC_DIR
+contains browser pages such as index.html, and DATA_DIR contains shared data
+files.
+
+MAX_REQUEST_SIZE and MAX_BUILDER_REQUEST_SIZE limit the amount of data accepted
+from normal requests and builder requests. Builder data is allowed to be
+larger because it can contain many atoms and bonds.
+
+MYSQL_HOST, MYSQL_PORT, MYSQL_DATABASE, MYSQL_USER, and MYSQL_PASSWORD hold the
+database connection settings. os.environ.get() uses a computer setting when
+one is provided and otherwise uses the code's default.
+
+PASSWORD_HASH_ITERATIONS says how many rounds of a password calculation are
+used. More rounds make guessing a stolen password hash slower.
+
+SESSION_COOKIE_NAME is the name used for the browser's sign-in cookie.
+
+viewer_lock and session_lock keep shared data changes orderly when requests
+arrive at the same time.
+
+viewer_process remembers the running VPython process. active_sessions is a
+dictionary mapping random browser session tokens to user IDs.
+
+
+LINES 52-61: CONNECT TO THE APP DATABASE
+----------------------------------------
+
+connect_user_database() opens a MySQL connection using the settings above and
+selects the app database.
+
+The return value is the open connection. Later code uses that connection to
+read or change account and search-history data.
+
+
+LINES 64-78: SAFELY USE A DATABASE CURSOR
+-----------------------------------------
+
+user_database_cursor() is a helper used with Python's "with" statement.
+
+It opens a database connection and a dictionary-style cursor. A dictionary
+cursor lets code read a result using column names such as user["username"].
+
+If the work finishes normally, it commits the database transaction so changes
+are saved. If a MySQL error occurs, it rolls back the transaction and raises
+the error so the caller can handle it. The cursor and connection are closed
+afterward, including when an error happens.
+
+
+LINES 81-127: CREATE DATABASE TABLES
+------------------------------------
+
+initialize_user_database() prepares the database structure.
+
+First, it checks that the database name contains only letters, numbers, and
+underscores. This makes it safe to place that name in the CREATE DATABASE
+statement.
+
+It then connects to the MySQL server and runs CREATE DATABASE IF NOT EXISTS.
+This means the database is created only if it is not already there.
+
+The users table stores each student's ID, unique username, grade, and password
+hash.
+
+The user_molecules table stores one row for each student-and-molecule pair.
+It stores the number of searches and the most recent search time.
+
+The user_id column in user_molecules refers to users.user_id. ON DELETE CASCADE
+means MySQL deletes a student's search rows if that student's account is
+deleted.
+
+IF NOT EXISTS means the tables are not recreated if they already exist.
+
+
+LINES 129-143: MAKE A PASSWORD HASH
+-----------------------------------
+
+hash_password() prepares a password value for safe storage.
+
+If no salt is passed in, secrets creates a new random 16-byte salt. A salt is
+different random data added to each password before hashing.
+
+hashlib.pbkdf2_hmac() repeatedly calculates a SHA-256-based result from the
+password and salt. The iteration count comes from PASSWORD_HASH_ITERATIONS.
+
+The function returns a text value containing the algorithm name, iteration
+count, salt, and resulting hash. It does not return the original password.
+
+
+LINES 146-164: CHECK A PASSWORD
+-------------------------------
+
+password_matches() checks a typed password against its saved hash.
+
+It splits the saved text into the algorithm, number of rounds, salt, and
+expected result. It rejects an unknown algorithm and an unreasonable iteration
+count before doing the calculation.
+
+It calculates a new hash using the password and saved salt, then compares it
+with the saved result using hmac.compare_digest(). This comparison is designed
+not to reveal information by taking different amounts of time for different
+matching prefixes.
+
+If the saved value is malformed, the function returns False. Otherwise it
+returns True only when the calculated and saved hashes match.
+
+
+LINES 166-181: RECORD A SEARCH
+------------------------------
+
+remember_user_search() records a signed-in student's molecule search.
+
+It makes a timestamp, then inserts a row into user_molecules. If that
+student-molecule pair is already present, the SQL updates the existing row by
+adding one to search_count and replacing last_searched with the new time.
+
+The percent-s placeholders are values supplied separately to the database
+driver. This keeps the values separate from the SQL instructions.
+
+
+LINES 184-191: FIND THE SIGNED-IN USER
+--------------------------------------
+
+get_signed_in_user_id() reads the Cookie header from a browser request and
+looks for the app's session cookie.
+
+If there is no such cookie, the browser is not signed in, so the function
+returns None. If the cookie exists, its token is looked up in active_sessions
+while holding session_lock. The result is the user's ID, or None if that token
+is not an active session.
+
+
+LINES 194-208: STOP THE VIEWER
+------------------------------
+
+stop_vpython_viewer() stops the saved VPython process, if there is one.
+
+It uses viewer_lock so another request does not change viewer_process at the
+same time. It clears the saved process reference, then checks whether the
+process is still running.
+
+It first asks the process to terminate and waits up to three seconds. If it
+does not stop in time, it kills it and waits for it to finish.
+
+
+LINES 211-258: START THE VIEWER
+-------------------------------
+
+start_vpython_viewer() starts the project's separate VPython viewer program.
+
+It first stops an already-running viewer. The app uses one viewer process at a
+time, so starting a new molecule replaces the previous scene.
+
+It asks the operating system for an available local port by binding a socket
+to port zero. It copies the current environment and sets VPython options so
+the viewer does not open a second browser window and uses that port.
+
+subprocess.Popen() starts the vsepr.vpython_viewer module with the molecule
+identifier, scene width, and height. sys.executable makes it use the same
+Python installation as this app.
+
+The function then tries to open the viewer's local URL. If the viewer replies
+with status 200, the URL is returned to the browser.
+
+If the viewer process exits early, or does not start within ten seconds, the
+function stops waiting and raises an error. The caller can turn that into an
+error response for the browser.
+
+
+LINES 260-271: LOAD A MOLECULE
+------------------------------
+
+molecule_for_identifier() first makes a lowercase version of the requested
+name for case-insensitive cache lookup.
+
+It loads the saved molecule map. If the name is already in that map, it
+returns the saved structure immediately.
+
+If the identifier contains only digits, it is converted to an integer so it
+can be used as a PubChem CID. Otherwise it remains a name. carbon_map() looks
+up or builds the structure. The result is added to the map, saved, and
+returned.
+
+
+LINES 274-329: PREPARE DATA FOR THE BROWSER
+------------------------------------------
+
+molecule_to_display_data() converts the project's molecule structure into two
+lists the browser can use: atoms and bonds.
+
+First, it collects atom labels from the structure's keys and neighbor lists.
+Labels starting with "lp" are treated as lone pairs. Other labels must begin
+with a valid chemical element symbol. Unknown or invalid symbols cause a
+ValueError.
+
+For each atom, the function creates a browser-friendly record with an ID,
+display label, chemical symbol, color, and display radius. Lone pairs get
+their own purple appearance. Other atom details come from
+ELEMENTS_BY_SYMBOL; their display radius is limited to a reasonable range.
+
+Next, Counter counts repeated neighbors. Repeated connections represent
+multiple bonds. The function keeps the highest order found for each
+undirected atom pair, so the same bond is not added twice.
+
+It converts atom IDs to positions in the atoms list. The bond records use
+those positions as source and target, and include the bond order.
+
+The returned dictionary has "atoms" and "bonds" entries.
+
+
+LINES 332-362: TURN A SAVED MOLECULE INTO A GRAPH
+------------------------------------------------
+
+saved_molecule_to_graph() converts a saved molecule into two dictionaries:
+one for atom symbols and one for connections.
+
+It collects all labels, including atoms that only appear as neighbors. It
+recognizes lone-pair labels and extracts chemical symbols from other labels.
+
+For every atom's neighbor list, it counts repeated entries. It stores counts
+by an alphabetically sorted atom pair, so a connection from A to B is treated
+the same as a connection from B to A.
+
+If an atom lists itself as its own neighbor, the function returns early with
+the data collected so far. Otherwise, it makes each connection in both
+directions in the adjacency dictionary. The result represents an undirected
+graph, where each bond connects both atoms.
+
+
+LINES 365-435: MATCH A BUILDER MOLECULE TO THE LIBRARY
+------------------------------------------------------
+
+find_cached_molecule_match() checks whether the builder's atoms and bonds
+represent a molecule in the saved library.
+
+It first makes a connection dictionary from the user's atom IDs and bonds.
+Then it calculates each atom's degree, meaning the total number of bonds
+connected to that atom.
+
+For each saved molecule:
+
+  1. Convert it to symbols and an adjacency graph.
+  2. Skip it if the counts of each kind of atom do not match.
+  3. Skip it if the counts of atom degrees do not match.
+  4. For each builder atom, make a list of saved atoms that have the same
+     element symbol and degree.
+  5. Try assigning builder atoms to saved atoms one by one.
+
+The inner find_matching_atom() function uses recursion. It tries a possible
+saved atom, checks that its connections to previously assigned atoms match,
+and then continues to the next atom. If a choice fails, it undoes that choice
+and tries another. This backtracking makes different atom IDs and ordering
+okay while still requiring the same bond graph.
+
+When all atoms can be assigned consistently, the saved molecule's name is
+returned. If none match, the function returns None.
+
+
+LINES 436-442: CREATE A JSON RESPONSE
+------------------------------------
+
+json_response() turns a Python value into a Flask JSON response with the
+requested status code.
+
+It sets the no-store cache rule and any optional response headers. Flask
+handles the JSON content type and response length.
+
+
+FLASK APP AND STATIC ROUTES
+---------------------------
+
+The Flask app serves index.html at / and other files from static/. Unknown
+API routes receive a JSON not-found response.
+
+
+LINES 455-480: READ AND CHECK A JSON REQUEST
+--------------------------------------------
+
+read_json_request() checks the Content-Length header and reads the JSON body.
+
+It returns both the parsed request dictionary and an optional Flask error
+response. An invalid, zero, or oversized length or invalid JSON produces an
+error response.
+
+Invalid JSON or text that cannot be decoded gets an error response. The
+request must also be a JSON object (a dictionary), not a list, number, or
+string. On success, the parsed dictionary is returned.
+
+If the body is not a JSON object, it returns an error response so the route
+does not continue processing.
+
+
+LINES 482-492: CHECK THE VIEWER WIDTH
+-------------------------------------
+
+read_scene_width() reads scene_width from a request, using 960 if it was not
+provided. It returns the width and an optional error response.
+
+The width must be an integer from 320 to 4096. The explicit Boolean check is
+important because Python treats True and False like integer values.
+
+If the value is invalid, the error response explains the acceptable range.
+
+
+LINES 494-529: START A VIEWER AND REPLY
+---------------------------------------
+
+send_viewer_response() starts the VPython viewer and prepares the browser's
+response.
+
+If the viewer cannot start, it sends a server error with the reason and stops.
+
+If a user ID was provided, it saves the search in that student's history.
+Database errors while saving are returned as an error instead of pretending
+the search was recorded successfully.
+
+Finally, it sends the display name, viewer URL, and atom/bond display data as
+JSON.
+
+
+GET ROUTES
+----------
+
+Flask GET routes handle the read-only API requests:
+
+  /api/session calls send_signed_in_user().
+  /api/recommendations returns the student's personal and class lists.
+  /api/elements sends element details sorted by atomic number.
+  /api/molecules reads names from the saved library and data/molecule_names.txt.
+    It removes duplicate names without caring about
+    uppercase versus lowercase.
+
+Database errors are returned through send_mysql_error(). Unknown API routes
+return "API endpoint not found."
+
+
+POST ROUTES
+-----------
+
+The Flask POST route handles the supported API addresses. Each decorator
+registers the shared api_post() function for one address.
+
+The builder route receives a larger request-size limit than the other routes.
+The method reads and checks the JSON body, then calls the matching account,
+builder, or molecule-search function.
+
+MySQL errors raised during request handling are converted into clear database
+error responses.
+
+
+LINES 623-629: REPORT DATABASE ERRORS
+-------------------------------------
+
+send_mysql_error() sends an HTTP 500 response with a message that MySQL could
+not complete the request and that the connection settings should be checked.
+The database error text is included to help diagnose the problem.
+
+
+LINES 631-650: RETURN THE CURRENT USER
+--------------------------------------
+
+send_signed_in_user() gets the user ID from the browser cookie and in-memory
+session list.
+
+If there is no active session, it sends a 401 response asking the user to sign
+in. Otherwise, it reads the username and grade from MySQL.
+
+If the session points to an account that no longer exists, it also sends a
+401 response. If the account exists, it returns the username and grade.
+
+
+LINES 652-707: BUILD RECOMMENDATIONS
+------------------------------------
+
+api_recommendations() requires an active sign-in. It reads the student's grade
+from MySQL.
+
+The first query finds the five most-searched molecules among all students in
+that grade. SUM(search_count) adds searches across students.
+
+The second query finds up to five molecules in this user's personal history,
+ordered by the most recent search.
+
+The results are returned in two separate lists:
+"class_recommendations" and "personal_recommendations".
+
+The search totals are converted to Python integers before JSON encoding.
+
+
+LINES 709-727: CHECK SIGN-IN FIELDS
+-----------------------------------
+
+account_details() is shared by sign-up and sign-in.
+
+It checks that username and password are text, that the trimmed username has
+3 to 30 characters, that the password has at least 6 characters, and that
+the selected grade is one of 6 through 12.
+
+If any check fails, the function returns an error response. Otherwise, it
+returns the trimmed username, password, and grade.
+
+
+LINES 729-744: START A USER SESSION
+-----------------------------------
+
+start_user_session() creates a random token with secrets.token_urlsafe().
+It saves the connection between that token and the user's ID in
+active_sessions, while holding the session lock.
+
+It returns the username and grade and sets a browser cookie containing the
+token. HttpOnly keeps page scripts from reading the cookie. SameSite=Lax gives
+the browser a basic cross-site request protection.
+
+
+LINES 746-769: CREATE AN ACCOUNT
+--------------------------------
+
+register_account() checks the submitted fields by calling account_details().
+
+It hashes the password and inserts a new user row into MySQL. If MySQL says
+the username is already taken, the method returns a conflict response with a
+message to try signing in.
+
+If the insert succeeds, it starts a session so the new user is signed in
+immediately.
+
+
+LINES 771-802: SIGN IN
+----------------------
+
+login_account() validates the fields, then searches MySQL for the username.
+
+It rejects the request if the account does not exist, the selected grade does
+not match the account, or password_matches() says the password is wrong.
+
+If all three checks pass, start_user_session() signs the student in.
+
+
+LINES 804-820: SIGN OUT
+-----------------------
+
+logout_account() reads the session cookie. If it exists, the matching token is
+removed from active_sessions while holding the lock.
+
+The server replies that the student is signed out and sends the same cookie
+with an empty value and Max-Age=0, telling the browser to delete it.
+
+
+LINES 822-857: SEARCH FOR A MOLECULE
+------------------------------------
+
+do_molecule_search() handles a normal request to display a molecule.
+
+It checks that identifier is a non-empty string and checks the scene width.
+Then it loads the molecule structure and converts it to browser display data.
+
+If molecule lookup reports a ValueError, the server returns a not-found
+response. If PubChem cannot be reached, it returns a gateway error explaining
+that the service could not be contacted.
+
+If lookup succeeds, send_viewer_response() starts the viewer and returns its
+URL. If the browser is signed in, the identifier is also stored in that
+student's search history. Network errors from PubChem return a gateway error.
+
+
+LINES 859-897: CHECK AND DISPLAY A BUILDER MOLECULE
+---------------------------------------------------
+
+visualize_built_molecule() reads atoms and bonds from a builder request.
+
+It checks the viewer width, requires between 1 and 200 atoms, and limits the
+number of bonds to 400. It then calls read_builder_atoms() and
+read_builder_bonds() to validate the details.
+
+find_cached_molecule_match() checks whether the structure is equivalent to a
+molecule in the saved library. If no match exists, the method replies that the
+structure is not in the library and does not render it.
+
+If a match exists, the saved structure is converted to display data and shown
+in the viewer.
+
+
+LINES 899-918: CHECK BUILDER ATOMS
+----------------------------------
+
+read_builder_atoms() checks each atom entry.
+
+Each entry must be an object with an integer ID and a symbol. Boolean values
+are rejected even though bool is a subclass of int in Python. The symbol must
+be "lp" or an element in ELEMENTS_BY_SYMBOL. Atom IDs cannot repeat.
+
+When every atom is valid, the function returns a dictionary mapping builder
+IDs to element symbols. If any atom fails validation, it sends an error and
+returns None.
+
+
+LINES 920-948: CHECK BUILDER BONDS
+----------------------------------
+
+read_builder_bonds() checks each bond entry.
+
+Both ends must be integer atom IDs that exist in the validated atom
+dictionary. Booleans are not accepted as IDs. A bond cannot connect an atom
+to itself.
+
+The two atom IDs are sorted to make the pair independent of which one was
+listed first. If the same pair appears more than once, the request is
+rejected. If all bonds are valid, the function returns a list of atom-ID
+pairs.
+
+
+LINES 950-971: START AND STOP THE WEB SERVER
+--------------------------------------------
+
+main() first initializes the MySQL database. If MySQL setup fails, it raises
+SystemExit with a message that names the environment variables to check.
+
+It starts Flask on 127.0.0.1 on port 8000 with threaded request handling.
+
+When Ctrl+C stops the server, the finally block stops the VPython viewer.
+
+
+RUN ONLY WHEN STARTED DIRECTLY
+------------------------------
+
+The if __name__ == "__main__" check is true when this file is started as the
+main program. In that case, main() runs. The root app.py launcher calls this
+main() function from the package module.
+
+If another Python file imports app.py, this check is false, so the web server
+does not start just because the file was imported.
+
+
+2. vsepr/element.py AND data/elements.csv — ELEMENT INFORMATION
+---------------------------------------------------------------
+
+vsepr/element.py
+
+Lines 1-5 import CSV and path tools and locate the project's data folder.
+
+Lines 7-34 define load_elements(). It opens data/elements.csv and reads it as rows
+with named columns. For each row, it converts numeric values such as atomic
+number, mass, radius, and valence electrons into Python numbers. The allowed
+valences cell is split at semicolons and converted into a tuple of integers.
+An empty electronegativity cell becomes None. The function returns a dictionary
+whose keys are element symbols.
+
+Line 35 calls load_elements() once when the module loads and saves the result
+as ELEMENTS_BY_SYMBOL. Other files use this dictionary to get element facts.
+
+Lines 38-75 define the atom class. __init__ saves the atom's label and symbol.
+If the symbol is "lp", it assigns special display and movement values to the
+lone pair. Otherwise it looks up the element in ELEMENTS_BY_SYMBOL and copies
+its chemical properties. An unknown symbol raises a ValueError. It then
+creates zero starting velocity and force, an empty list of attached atoms,
+and an empty slot for the VPython sphere.
+
+The attach() method at lines 69-75 records a connected atom in the attached
+list. This list is used by vsepr/moleculeobj.py and vsepr/rendering.py.
+
+data/elements.csv
+
+Line 1 names the columns. Lines 2-119 give one element per row. The columns
+hold atomic number, symbol, name, atomic mass, covalent radius in picometres,
+electronegativity, display color, number of valence electrons, and allowed
+valences. A blank electronegativity means that value is not supplied. The
+semicolon-separated allowed valences are turned into a tuple by element.py.
+
+
+3. vsepr/nameProcessing.py — READ, BUILD, AND SAVE MOLECULES
+------------------------------------------------------------
+
+Lines 1-13 import file, text, PubChem, and element-table tools. The import
+fallback supports direct execution as well as package imports. PROJECT_DIR
+stores the project root.
+
+Lines 16-23 define _resolve_data_path(). It uses data/molecule.dat by default.
+When a different filename is supplied, it makes relative paths start from the
+project folder and leaves absolute paths alone.
+
+Lines 27-47 define load_molecule_map(). It opens the cache in binary mode and
+uses pickle to read it. If the file does not exist, it returns an empty
+dictionary. It recognizes the current named-cache format. It also handles the
+older format by treating the old unnamed structure as propane.
+
+Lines 50-56 define save_molecule_map(). It wraps the molecule dictionary in a
+small versioned record and writes it to a binary file using pickle protocol 4.
+
+Lines 59-274 define carbon_map_from_smiles(), the SMILES-to-structure
+converter.
+
+  Lines 60-67 set up lists and counters for atoms, branches, ring closures,
+  the current atom, pending bond type, and the current character position.
+
+  Lines 68-93 define the nested add_atom() helper. It checks the element
+  symbol, stores the atom, and connects it to the previous atom using the
+  pending bond type. If there is no explicit bond sign, it uses a single bond
+  or an aromatic bond between two aromatic atoms.
+
+  Lines 95-180 read the SMILES text one character at a time. Bond signs set
+  the next bond type. Parentheses save and restore the current atom for
+  branches. A dot starts a separate component. Digits and percent-number
+  labels open or close ring connections. Square brackets read bracket atom
+  details such as an isotope prefix, explicit hydrogen count, or charge.
+  Other characters are read as element symbols, including two-letter Cl and
+  Br. Invalid symbols or malformed structures raise ValueError.
+
+  Lines 182-184 reject unfinished branches, rings, pending bonds, or a string
+  that did not contain any atoms.
+
+  Lines 186-205 choose a consistent alternating single/double bond pattern
+  for aromatic connections. It avoids putting two aromatic double bonds on
+  one atom and treats certain nitrogen cases specially.
+
+  Lines 207-221 count non-hydrogen atoms and assign labels such as C1 and O1.
+
+  Lines 223-274 build the final adjacency map. For each non-hydrogen atom,
+  the code totals its bond valence, accounts for explicit hydrogens and
+  charge, selects a supported target valence, and calculates implicit
+  hydrogens. It lists each connected atom once per bond order, adds hydrogen
+  labels, calculates lone pairs from the valence-electron count, and stores
+  the attached labels under the atom's label.
+
+Lines 277-283 define carbon_map_from_compound(). It gets the compound's
+isomeric SMILES string and converts it to the project map. A compound with no
+SMILES is rejected.
+
+Lines 286-297 define carbon_map(). An integer identifier is treated as a
+PubChem compound ID. Text is searched as a compound name. The first PubChem
+result is converted to the project map; no result raises ValueError.
+
+Lines 300-337 define main(), the command-line lookup flow. It gets an
+identifier from the command line or asks the student to type one. It looks
+in the saved cache first. If not found, it calls PubChem, prints the
+structure, saves it, and returns it. A lookup or input ValueError is printed
+as a readable error.
+
+Lines 338-339 make the command-line flow run only when this file itself is
+started directly.
+
+
+4. vsepr/moleculeobj.py — MAKE THE VPYTHON ATOMS AND BONDS
+----------------------------------------------------
+
+Lines 1-8 import the atom class and only the math and VPython names used by
+this module. Explicit imports avoid bringing in unused names from those
+libraries.
+
+Lines 10-39 define the molecule class constructor. It finds every unique atom
+label in the structure and makes one atom object for it. It saves the
+structure, creates connections, checks whether the structure has a ring,
+chooses a ring or non-ring starting layout, and applies a small disturbance
+to help the later repulsion simulation get out of a perfectly flat layout.
+
+Lines 40-49 define attachatms(). It reads the adjacency map and connects
+atoms to each other. Atoms that appear only as neighbors are connected back
+to their central atom as well.
+
+Lines 51-58 define hex_to_rgb(). It changes a color such as "#FF0000" from
+three hexadecimal color values into a VPython vector with values from zero
+to one.
+
+Lines 60-63 define genstchain(), which asks _make_spheres() to place the
+molecule without pre-supplied ring positions.
+
+Lines 65-76 define _bond_directions(). It creates evenly spaced directions
+around a flat circle for starting attached groups. These are starting
+positions, not prescribed final equilibrium angles.
+
+Lines 78-193 define _make_spheres(), which creates the visible spheres:
+
+  Lines 81-88 collect center atoms, labels, and any supplied starting
+  positions.
+
+  Lines 90-119 repeatedly place connected center atoms that do not yet have
+  positions. They are placed beside their already-positioned parent atoms.
+
+  Lines 121-143 create the spheres for center atoms. If a center atom has no
+  calculated location, it uses a simple position along the x direction.
+
+  Lines 145-193 find each unique attached atom and place it around its center.
+  In a ring, non-lone-pair atoms attached to the ring are placed outward from
+  the ring. Other attachments use the starting directions from
+  _bond_directions(). Real atoms are drawn as colored spheres. Lone pairs are
+  drawn as a translucent purple shell with two smaller electron dots.
+
+Lines 195-229 define cylinders(), which draws real-atom bonds. It skips lone
+pairs, avoids drawing the same connection twice, and repeats/offsets cylinders
+to show multiple bonds. It returns the cylinders and the atoms they connect,
+which lets rendering.py update their positions.
+
+Lines 231-263 define checkcycle(). Its nested search walks connections
+between center atoms and records a path when it finds a ring of at least
+three atoms. The result is stored in self.cycle and self.cyclic.
+
+Lines 265-311 define gencyclic(). It calculates the target chord lengths
+from the atom radii, then uses a binary search to find a circle radius whose
+chord angles add to one full turn. It places each ring atom on that circle
+and then builds the remaining spheres.
+
+Lines 313-352 define disturb(). It estimates the normal direction of a flat
+group and nudges attached groups a small distance alternately to either side
+of the plane. It normalizes the direction again so the initial center-to-
+attached-atom distance stays the sum of their radii. The nudge only starts
+motion; the renderer's repulsion calculates the evolving arrangement.
+
+
+5. vsepr/rendering.py — MOVE THE MOLECULE BY REPULSION
+------------------------------------------------
+
+Lines 1-6 import the molecule builder and only the VPython names used by the
+animation. DAMPING controls how quickly movement slows down. MAX_PAIR_FORCE
+caps a single repulsion force, and MAX_ATOM_SPEED caps an atom's speed.
+
+Lines 13-29 define keep_bond_lengths(). It repeatedly checks each connection
+and moves both atoms toward or away from each other until their distance is
+the sum of their radii. It also stops early when the remaining error is tiny.
+
+Lines 32-39 define bond_side(). It calculates a direction perpendicular to a
+bond. Multiple bond cylinders use that direction to sit beside one another.
+
+Lines 41-132 define render(), the continuous 3D animation:
+
+  Lines 43-50 set the scene size and background, create the molecule's
+  spheres, and draw the starting bond cylinders.
+
+  Lines 51-75 make a list of real visible bonds, then a second list of all
+  geometry connections. The second list includes lone-pair connections for
+  geometry calculations. Lone pairs are excluded from visible bond cylinders.
+
+  Lines 76-80 choose the time step and start the endless animation loop.
+
+  Lines 81-84 reset every atom's force at the start of each frame.
+
+  Lines 85-108 calculate repulsion between every pair of atoms/domains that
+  are not bonded. The force points away from the other domain and is capped
+  so the simulation does not create an extreme force.
+
+  Lines 110-128 project force perpendicular to each attached connection,
+  average it, use it to update velocity, apply damping and speed limits, and
+  move each atom.
+
+  Line 129 corrects the positions to preserve all geometry bond lengths.
+
+  Lines 130-132 update bond-cylinder positions and ask VPython to refresh at
+  a steady display rate.
+
+The simulation does not set a final tetrahedral angle. It starts from a
+slightly disturbed layout, applies repulsion, and keeps connection lengths
+fixed while the shape changes.
+
+
+6. vsepr/vpython_viewer.py — START ONE VIEWER PROCESS
+----------------------------------------------------
+
+Lines 1-9 describe the helper and import the saved molecule loader.
+
+Lines 11-33 define main(). It reads the molecule name, scene width, and scene
+height from command-line arguments. It finds that molecule in the saved
+structure map, reports an error if it is missing, imports rendering, and
+starts render() with the requested size and gray background.
+
+Lines 35-36 run main() only when this module is started as a program.
+vsepr/app.py starts it as a separate module and supplies its command-line
+values.
+
+
+7. scripts/populate_molecules.py — BUILD THE STARTER MOLECULE LIBRARY
+---------------------------------------------------------------------
+
+Lines 1-8 describe the file, import the structure conversion and cache
+functions, and find the project root.
+
+Lines 11-112 hold the MOLECULES list. Each entry is a display name paired
+with a SMILES string. The entries include small molecules, hydrocarbons,
+rings, aromatic compounds, alcohols, acids, nitrogen compounds, halogen
+compounds, sulfur and phosphorus compounds, and familiar biological or
+medicine-related examples. The list is data, not a series of separate
+commands.
+
+Lines 115-136 define main(). It checks that there are exactly 100 entries,
+loads any already-saved molecules, converts each list entry from SMILES into
+the project map, and stores the result under the lowercase name. It writes
+the binary cache and then writes one display name per line to
+data/molecule_names.txt.
+
+Run it from the project root with `python -m scripts.populate_molecules`.
+
+
+8. scripts/test.py — COMMAND-LINE VIEWER ENTRY POINT
+----------------------------------------------------
+
+Lines 1-4 import the molecule lookup helper and renderer.
+
+Run it from the project root with `python -m scripts.test`. Lines 7-13 call
+the input helper, pass the resulting structure to render(),
+and print "Try Again" for an AttributeError. An IndexError is ignored. This
+file is a simple manual-run wrapper; it does not define automated test cases.
+
+
+9. static/index.html — SEARCH AND RECOMMENDATIONS PAGE
+------------------------------------------------------
+
+Lines 1-7 declare an HTML document, choose UTF-8 and responsive viewport
+settings, and set the page title.
+
+Lines 8-127 contain CSS. The rules define colors, typography, buttons,
+search controls, the viewer panel, recommendations, legend, and responsive
+layout for narrow screens. CSS changes appearance; it does not perform
+molecule calculations.
+
+Lines 129-212 make the visible page: navigation links, introductory text,
+search box, quick-search buttons, recommendations section, viewer iframe,
+empty state, legend, and error message.
+
+Lines 214-232 find those page elements in JavaScript and keep references to
+them for later updates.
+
+Lines 233-249 define showRecommendations(). It empties a recommendation list,
+shows a "no searches yet" message when there are no results, or adds each
+molecule name and count to the page.
+
+Lines 251-268 define loadRecommendations(). It checks whether the browser is
+signed in, fetches recommendation data, fills in the student's name and grade,
+shows both recommendation lists, and hides the sign-in link. Errors are
+written to the browser console.
+
+Lines 270-283 define loadSuggestions(). It fetches the saved molecule names
+and adds them to the search box's datalist so the browser can suggest names.
+Suggestions are optional; manual search still works if they cannot load.
+
+Lines 285-293 define showError() and hideError(), which show or clear the
+message panel.
+
+Lines 295-304 define formulaFor(). It counts chemical symbols, skips lone
+pairs, orders carbon and hydrogen first, then joins the counts into a formula
+string.
+
+Lines 306-332 define render(). It counts real atoms, bonds, and lone pairs;
+fills in the title and formula; builds the color legend; and loads the
+returned viewer URL in the iframe.
+
+Lines 334-361 handle search form submission. The code sends the name or CID
+and viewer width to /api/molecule, displays a returned error or viewer, and
+updates recommendations. The submit button is disabled while the request is
+running and restored afterward.
+
+Lines 363-367 make the quick-search buttons fill in the search box and submit
+the form.
+
+Lines 369-386 send a logout request and reload the page if sign-out succeeds.
+
+Lines 388-390 close the script and HTML page. The page starts loading saved
+name suggestions and signed-in recommendations at the end of its script.
+
+
+10. static/create.html — MOLECULE BUILDER
+-----------------------------------------
+
+Lines 1-7 declare the page and its title.
+
+Lines 8-71 contain CSS for the dark theme, element sidebar, toolbar, SVG
+canvas, atom and bond shapes, selection state, status messages, and mobile
+layout.
+
+Lines 73-109 make the page structure: navigation, element search/list,
+buttons, SVG drawing canvas, viewer preview iframe, and status text.
+
+Lines 110-129 select those page elements and initialize the arrays and state
+variables used for elements, atoms, bonds, selections, and dragging.
+
+Lines 131-149 define setStatus() and updateControls(). They show messages and
+enable or disable buttons based on the current atom and bond selection.
+
+Lines 151-173 define drawElements(). It filters the element table using the
+search text, then creates a button for each matching element. Clicking an
+element chooses it for adding to the canvas.
+
+Lines 174-198 define drawMolecule(). It redraws the SVG connections and atom
+circles/text from the current arrays and marks selected atoms or bonds.
+
+Lines 200-205 define canvasPoint(), which converts a browser pointer location
+into the SVG canvas coordinate system.
+
+Lines 207-270 handle pointer input. Clicking an atom selects it; holding
+Shift can select a second atom. Clicking a bond selects that connection.
+Clicking a blank canvas spot adds the selected element. Pointer movement
+drags atoms, and pointer up/cancel ends the drag.
+
+Lines 272-284 create a bond between two selected atoms if one does not
+already exist.
+
+Lines 285-294 remove the selected bond or the bond between two selected
+atoms.
+
+Lines 296-312 delete the selected atom and any bonds connected to it.
+
+Lines 314-328 clear selections or clear the entire drawing and reset atom
+numbering. The element search input redraws the filtered element list.
+
+Lines 331-362 send the atom and bond arrays to /api/visualize-built. If the
+server finds an equivalent saved molecule, the returned viewer appears in
+the iframe. Otherwise, an error is shown in the status area. The student can
+return to the editor after a successful match.
+
+Lines 364-370 restore the canvas after preview and clear the viewer iframe.
+
+Lines 372-389 load the element list from /api/elements, add the special lone
+pair choice, draw the buttons, and report a loading error if the request
+fails.
+
+Lines 391-393 close the script and document.
+
+
+11. static/signin.html — STUDENT SIGN-IN AND ACCOUNT CREATION
+-------------------------------------------------------------
+
+Lines 1-7 declare the HTML page, responsive settings, and title.
+
+Lines 8-47 style the account card, sign-in/register mode buttons, form
+fields, grade selector, and status message.
+
+Lines 49-82 build the page: the mode switch, username and password fields,
+grade choices 6 through 12, submit button, and status text.
+
+Lines 84-92 find the form elements in JavaScript and set the initial mode to
+sign-in.
+
+Lines 94-103 define chooseMode(). It updates the selected mode, accessible
+button state, title, submit text, password autocomplete hint, and old message.
+
+Lines 105-106 connect the sign-in and create-account buttons to chooseMode().
+
+Lines 107-134 handle form submission. The code sends username, password, and
+grade as JSON to either /api/account/login or /api/account/register. On
+success it redirects to the home page; on failure it shows the server error.
+The submit button is re-enabled afterward.
+
+Lines 136-138 check /api/session when the page loads. A user who is already
+signed in is redirected to the home page.
+
+Lines 139-141 close the script and HTML page.
+
+
+12. requirements.txt AND PROJECT DATA FILES
+--------------------------------------------
+
+requirements.txt
+  Names the external Python packages: mysql-connector-python for MySQL,
+  Flask for the web application, pubchempy for PubChem lookup, and vpython
+  for 3D rendering. Each dependency is used by a project feature; imports
+  from Python's standard library do not need to be listed here.
+
+molecule_names.txt
+  Lines 1-100 contain one display name per line.
+  scripts/populate_molecules.py writes this file, and vsepr/app.py uses it to
+  provide search suggestions.
+
+molecule.dat
+  This is a binary pickle file, not a text file. It stores a dictionary of
+  named molecule maps. nameProcessing.py reads and writes it, and
+  scripts/populate_molecules.py can regenerate the starter contents.
+
+vsepr/userdata.py
+  This file currently has zero lines, so it contains no code or data used by
+  the project.
+
+__pycache__/
+  This folder contains generated Python bytecode files. Python can create
+  these automatically after imports; they are not hand-written source code
+  and are not needed to understand the molecule logic.
